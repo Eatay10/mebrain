@@ -21,6 +21,7 @@ Kaynak: `tasks/TASK-*.md` (frontmatter `status`). `/implement-task` sonunda gün
 | [TASK-015](TASK-015.md) | Gözlemlenebilirlik ve güvenlik ekranlarını yap | C | backend-implementer | P0 | TASK-003, TASK-012 | TODO |
 | [TASK-016](TASK-016.md) | Agent gate'lerini ve CI'ı kur | C | backend-implementer | P0 | TASK-001 | TODO |
 | [TASK-017](TASK-017.md) | E2E ve güvenlik regresyon test paketini yaz | D | qa-implementer | P0 | TASK-013 | TODO |
+| [TASK-019](TASK-019.md) | Unit hiyerarşisi, çok kişili task, ilerleme/takip, planlı rapor, yetkinlik puanı | A | backend-implementer | P0 | TASK-005, TASK-013, TASK-014 | REVIEW |
 | [TASK-018](TASK-018.md) | Demo senaryolarını ve sunumu hazırla | D | presenter | P1 | TASK-015, TASK-016, TASK-017 | TODO |
 
 ## Paralel çalışma dalgaları

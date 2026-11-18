@@ -1,4 +1,9 @@
-"""Etkinlikler ve katılımlar (EVT-01..03). Etkinlikler kurum genelinde görünür; katılımlar kapsamla."""
+"""Etkinlikler, katılımlar ve fotoğraflar (EVT-01..03).
+
+Etkinlikler kurum genelinde görünür; katılımlar kapsamla.
+
+Katılım ATTENDED olunca etkinliğe bağlı yetkinliklerin puanı katılımcı için artar (competencies.award).
+"""
 
 from datetime import date, timedelta
 from typing import Any
@@ -15,7 +20,7 @@ from app.contract import NotificationType as NT
 from app.contract import ParticipationStatus as PS
 from app.core.errors import BadRequest, Conflict, InvalidTransition, NotFound
 from app.core.schemas import PageParams, user_ref
-from app.models import Event, EventParticipation, User
+from app.models import Competency, Event, EventCompetency, EventParticipation, EventPhoto, User
 from app.models.base import utcnow
 from app.modules.notifications.service import notify
 from app.modules.tasks.repository import escape_like
@@ -25,7 +30,8 @@ DECISIONS = {
     PS.REQUESTED: {PS.APPROVED, PS.REJECTED, PS.CANCELLED},
     PS.APPROVED: {PS.ATTENDED, PS.CANCELLED},
 }
-TRACKED = ("title", "type", "description", "organizer", "location", "url", "starts_at", "ends_at")
+TRACKED = ("title", "type", "description", "organizer", "location", "url", "notes", "starts_at", "ends_at")
+PHOTO_TYPES = ("image/jpeg", "image/png", "image/webp")
 STATUS_TR = {
     PS.APPROVED: "onaylandı",
     PS.REJECTED: "reddedildi",
@@ -59,7 +65,7 @@ def _participation(p: EventParticipation) -> c.Participation:
     )
 
 
-def _to_contract(e: Event, count: int, mine: EventParticipation | None) -> c.Event:
+def _to_contract(e: Event, count: int, mine: EventParticipation | None, photos: int = 0) -> c.Event:
     return c.Event(
         id=e.id,
         title=e.title,
@@ -69,6 +75,12 @@ def _to_contract(e: Event, count: int, mine: EventParticipation | None) -> c.Eve
         organizer=e.organizer,
         location=e.location,
         url=e.url,
+        notes=e.notes,
+        competencies=[
+            c.CompetencyGain(competency_id=lk.competency_id, name=lk.competency.name, points=lk.points)
+            for lk in e.competency_links
+        ],
+        photo_count=photos,
         starts_at=e.starts_at,
         ends_at=e.ends_at,
         created_by=user_ref(e.creator),
@@ -102,7 +114,26 @@ def _enrich(db: Session, user: User, events: list[Event]) -> list[c.Event]:
         if ids
         else {}
     )
-    return [_to_contract(e, counts.get(e.id, 0), mine.get(e.id)) for e in events]
+    photos = (
+        dict(
+            db.execute(
+                select(EventPhoto.event_id, func.count())
+                .where(EventPhoto.event_id.in_(ids), EventPhoto.deleted_at.is_(None))
+                .group_by(EventPhoto.event_id)
+            ).all()
+        )
+        if ids
+        else {}
+    )
+    return [_to_contract(e, counts.get(e.id, 0), mine.get(e.id), photos.get(e.id, 0)) for e in events]
+
+
+def _set_competencies(db: Session, e: Event, ids: list[UUID], points: int | None) -> None:
+    ids = list(dict.fromkeys(ids))
+    found = set(db.scalars(select(Competency.id).where(Competency.id.in_(ids)))) if ids else set()
+    if len(found) != len(ids):
+        raise BadRequest(errors=[{"field": "competencyIds", "message": "Bilinmeyen yetkinlik."}])
+    e.competency_links = [EventCompetency(competency_id=cid, points=points or 10) for cid in ids]
 
 
 def get_event(db: Session, event_id: UUID) -> Event:
@@ -171,22 +202,32 @@ def create(db: Session, user: User, body: c.EventCreate) -> c.Event:
         organizer=body.organizer,
         location=body.location,
         url=_url(body.url),
+        notes=body.notes,
         starts_at=body.starts_at,
         ends_at=body.ends_at,
         created_by=user.id,
     )
     db.add(e)
     db.flush()
+    _set_competencies(db, e, body.competency_ids or [], body.competency_points)
+    db.flush()
     record(db, "event.create", "event", e.id, {"title": [None, e.title], "scope": [None, e.scope.value]})
     db.refresh(e)
-    return _to_contract(e, 0, None)
+    return _enrich(db, user, [e])[0]
 
 
 def update(db: Session, user: User, event_id: UUID, body: c.EventUpdate) -> c.Event:
     e = get_event(db, event_id)
     P.require(P.can_edit_event(user, e), user, "event.update", str(e.id))
     before = {k: getattr(e, k) for k in TRACKED}
-    for name in body.model_fields_set:
+    extra = {"competency_ids", "competency_points"}
+    if body.model_fields_set & extra:
+        current = [lk.competency_id for lk in e.competency_links]
+        points = body.competency_points or (e.competency_links[0].points if e.competency_links else None)
+        ids = body.competency_ids if body.competency_ids is not None else current
+        _set_competencies(db, e, ids, points)
+        record(db, "event.competencies", "event", e.id, {"competencies": [None, [str(x) for x in ids]]})
+    for name in body.model_fields_set - extra:
         value = getattr(body, name)
         if name in ("title", "type", "starts_at", "ends_at") and value is None:
             raise BadRequest(errors=[{"field": name, "message": "Boş olamaz."}])
@@ -276,6 +317,17 @@ def decide(db: Session, user: User, participation_id: UUID, body: c.Participatio
         p.note = body.note
     record(db, "participation.decide", "participation", p.id, {"status": [frm.value, to.value]})
     event = db.get(Event, p.event_id)
+    if to == PS.ATTENDED and event is not None and event.competency_links:
+        from app.modules.competencies.service import award
+
+        award(
+            db,
+            p.user_id,
+            [(lk.competency_id, lk.points) for lk in event.competency_links],
+            "EVENT",
+            event.id,
+            event.title,
+        )
     notify(
         db,
         [p.user_id],
@@ -288,3 +340,97 @@ def decide(db: Session, user: User, participation_id: UUID, body: c.Participatio
     db.flush()
     db.refresh(p)
     return _participation(p)
+
+
+# ------------------------------------------------------------------ fotoğraflar
+def _photo(ph: EventPhoto) -> c.EventPhoto:
+    return c.EventPhoto(
+        id=ph.id,
+        event_id=ph.event_id,
+        caption=ph.caption,
+        content_type=ph.content_type,
+        size_bytes=ph.size_bytes,
+        uploaded_by=user_ref(ph.uploader),  # type: ignore[arg-type]
+        created_at=ph.created_at,
+    )
+
+
+def _can_upload_photo(db: Session, user: User, e: Event) -> bool:
+    if P.is_read_only(user):
+        return False
+    if P.can_edit_event(user, e):
+        return True
+    return (
+        db.scalar(
+            select(EventParticipation.id).where(
+                EventParticipation.event_id == e.id,
+                EventParticipation.user_id == user.id,
+                EventParticipation.status.in_((PS.APPROVED, PS.ATTENDED)),
+            )
+        )
+        is not None
+    )
+
+
+def list_photos(db: Session, user: User, event_id: UUID) -> list[c.EventPhoto]:
+    e = get_event(db, event_id)
+    rows = db.scalars(
+        select(EventPhoto)
+        .where(EventPhoto.event_id == e.id, EventPhoto.deleted_at.is_(None))
+        .order_by(EventPhoto.created_at)
+    )
+    return [_photo(x) for x in rows.unique()]
+
+
+def add_photo(
+    db: Session, user: User, event_id: UUID, caption: str | None, content_type: str | None, data: bytes
+) -> c.EventPhoto:
+    from app.modules.tasks.service import check_upload
+
+    e = get_event(db, event_id)
+    P.require(_can_upload_photo(db, user, e), user, "event_photo.create", str(e.id))
+    ctype = check_upload(data, content_type, PHOTO_TYPES)
+    if not _looks_like_image(data, ctype):
+        raise BadRequest(errors=[{"field": "file", "message": "Geçerli bir JPEG/PNG/WebP görseli değil."}])
+    ph = EventPhoto(
+        event_id=e.id,
+        caption=(caption or "").strip()[:300] or None,
+        content_type=ctype,
+        size_bytes=len(data),
+        data=data,
+        uploaded_by=user.id,
+    )
+    db.add(ph)
+    db.flush()
+    record(db, "event_photo.create", "event", e.id, {"photoId": [None, str(ph.id)]})
+    db.refresh(ph)
+    return _photo(ph)
+
+
+def _looks_like_image(data: bytes, ctype: str) -> bool:
+    if ctype == "image/jpeg":
+        return data[:3] == b"\xff\xd8\xff"
+    if ctype == "image/png":
+        return data[:8] == b"\x89PNG\r\n\x1a\n"
+    return data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+
+
+def get_photo(db: Session, user: User, photo_id: UUID) -> EventPhoto:
+    ph = db.get(EventPhoto, photo_id)
+    if ph is None or ph.deleted_at is not None:
+        raise NotFound("Fotoğraf bulunamadı.")
+    get_event(db, ph.event_id)
+    return ph
+
+
+def delete_photo(db: Session, user: User, photo_id: UUID) -> None:
+    ph = get_photo(db, user, photo_id)
+    e = get_event(db, ph.event_id)
+    P.require(
+        not P.is_read_only(user) and (ph.uploaded_by == user.id or P.can_edit_event(user, e)),
+        user,
+        "event_photo.delete",
+        str(ph.id),
+    )
+    ph.deleted_at = utcnow()
+    record(db, "event_photo.delete", "event", e.id, {"photoId": [str(ph.id), None]})

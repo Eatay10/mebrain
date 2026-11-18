@@ -1,8 +1,22 @@
-import { Download } from "lucide-react";
+import { CalendarClock, Download, Play, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { csvUrl, errorMessage, useTaskReport, useTeams } from "../api/hooks";
 import {
+  csvUrl,
+  errorMessage,
+  useCreateReportSchedule,
+  useDeleteReportSchedule,
+  useReportSchedules,
+  useRunReportSchedule,
+  useTaskReport,
+  useTeams,
+  useUpdateReportSchedule,
+  type Schemas,
+} from "../api/hooks";
+import { useAuth } from "../auth";
+import {
+  Badge,
+  Button,
   Card,
   CardHeader,
   EmptyState,
@@ -13,9 +27,10 @@ import {
   ProgressBar,
   Select,
   Skeleton,
+  useToast,
 } from "../components/ui";
-import { groupByLabel, priorityLabel, statusLabel, typeLabel, categoryLabel } from "../i18n/tr";
-import { isoDate, pct } from "../lib/format";
+import { groupByLabel, priorityLabel, reportFrequencyLabel, statusLabel, typeLabel, categoryLabel } from "../i18n/tr";
+import { fmtDateTime, isoDate, pct } from "../lib/format";
 
 type GroupBy = keyof typeof groupByLabel;
 const ENUM_LABELS: Record<string, Record<string, string>> = {
@@ -147,6 +162,116 @@ export function ReportsPage() {
           </Card>
         </div>
       )}
+      <SchedulesCard />
     </>
+  );
+}
+
+function SchedulesCard() {
+  const { can } = useAuth();
+  const toast = useToast();
+  const teams = useTeams();
+  const list = useReportSchedules();
+  const create = useCreateReportSchedule();
+  const update = useUpdateReportSchedule();
+  const del = useDeleteReportSchedule();
+  const run = useRunReportSchedule();
+  const [name, setName] = useState("");
+  const [frequency, setFrequency] = useState<Schemas["ReportFrequency"]>("WEEKLY");
+  const [groupBy, setGroupBy] = useState<GroupBy>("team");
+  const [teamId, setTeamId] = useState("");
+  if (!can.manage && !can.readOnly) return null;
+  const onError = (e: unknown) => toast("error", errorMessage(e));
+  return (
+    <Card className="mt-6">
+      <CardHeader
+        title="Planlı raporlar"
+        subtitle="Haftalık ve aylık raporlar önceki dönem için üretilip CSV eki ile e-postanıza gönderilir."
+      />
+      <form
+        className="grid gap-3 border-b border-border px-5 py-4 sm:grid-cols-2 lg:grid-cols-[2fr_1.5fr_1fr_1fr_auto] lg:items-end"
+        onSubmit={(e) => {
+          e.preventDefault();
+          create.mutate(
+            { name: name.trim(), frequency, groupBy, teamId: teamId || undefined },
+            { onSuccess: () => (setName(""), toast("success", "Rapor planlandı.")), onError },
+          );
+        }}
+      >
+        <Field label="Ad" htmlFor="s-name">
+          <Input id="s-name" value={name} onChange={(e) => setName(e.target.value)} minLength={2} maxLength={100} placeholder="Örn. SOC haftalık durum" />
+        </Field>
+        <Field label="Sıklık" htmlFor="s-freq">
+          <Select id="s-freq" value={frequency} onChange={(e) => setFrequency(e.target.value as Schemas["ReportFrequency"])}>
+            {Object.entries(reportFrequencyLabel).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </Select>
+        </Field>
+        <Field label="Gruplama" htmlFor="s-group">
+          <Select id="s-group" value={groupBy} onChange={(e) => setGroupBy(e.target.value as GroupBy)}>
+            {Object.entries(groupByLabel).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </Select>
+        </Field>
+        <Field label="Ekip" htmlFor="s-team">
+          <Select id="s-team" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
+            <option value="">Tümü</option>
+            {(teams.data ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </Select>
+        </Field>
+        <Button type="submit" loading={create.isPending} disabled={name.trim().length < 2}>
+          <CalendarClock className="size-4" /> Planla
+        </Button>
+      </form>
+      {list.isPending ? (
+        <Skeleton className="m-5 h-16" />
+      ) : list.error ? (
+        <ErrorState message={errorMessage(list.error)} />
+      ) : list.data.length === 0 ? (
+        <EmptyState title="Planlı rapor yok" description="Yukarıdan haftalık veya aylık rapor planlayın." />
+      ) : (
+        <ul className="divide-y divide-border">
+          {list.data.map((s) => (
+            <li key={s.id} className="flex flex-wrap items-center gap-3 px-5 py-3 text-sm">
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-text">{s.name}</p>
+                <p className="text-xs text-muted">
+                  {reportFrequencyLabel[s.frequency]} · {groupByLabel[s.groupBy as GroupBy]} bazında
+                  {s.teamId ? ` · ${teams.data?.find((t) => t.id === s.teamId)?.name ?? ""}` : ""} · sonraki: {fmtDateTime(s.nextRunAt)}
+                  {s.lastRunAt && ` · son: ${fmtDateTime(s.lastRunAt)}`}
+                </p>
+              </div>
+              {s.lastStatus && (
+                <Badge className={s.lastStatus === "SUCCESS" ? "bg-success-soft text-done" : "bg-danger-soft text-danger"}>
+                  {s.lastStatus === "SUCCESS" ? "Gönderildi" : "Başarısız"}
+                </Badge>
+              )}
+              <label className="flex items-center gap-1.5 text-xs text-muted">
+                <input
+                  type="checkbox"
+                  checked={s.active}
+                  onChange={(e) => update.mutate({ id: s.id, active: e.target.checked }, { onError })}
+                />
+                Aktif
+              </label>
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={run.isPending && run.variables === s.id}
+                onClick={() => run.mutate(s.id, { onSuccess: () => toast("success", "Rapor e-postayla gönderildi."), onError })}
+              >
+                <Play className="size-4" /> Şimdi gönder
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label={`${s.name} planını sil`}
+                onClick={() => confirm("Plan silinsin mi?") && del.mutate(s.id, { onError })}
+              >
+                <Trash2 className="size-4 text-danger" />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }

@@ -1,4 +1,4 @@
-import { AlarmClock, ArrowRight } from "lucide-react";
+import { AlarmClock, ArrowRight, Star, TrendingUp } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -14,6 +14,7 @@ import {
   Select,
   Skeleton,
   Stat,
+  StatusBadge,
   Tabs,
 } from "../components/ui";
 import { fmtDate, fmtRelative, pct } from "../lib/format";
@@ -100,6 +101,33 @@ export function DashboardPage() {
           </div>
 
           <div className="grid gap-6 xl:grid-cols-3">
+            <Card>
+              <CardHeader title="İlerleme" subtitle="Task'ların ortalama tamamlanma yüzdesi" />
+              {!d ? (
+                <Skeleton className="m-5 h-24" />
+              ) : (
+                <div className="space-y-4 px-5 py-4">
+                  {[
+                    ["Kapsamdaki tüm task'lar", d.avgProgress ?? 0],
+                    ["Dahil olduğum task'lar", d.mineAvgProgress ?? 0],
+                  ].map(([label, value]) => (
+                    <div key={String(label)}>
+                      <div className="mb-1 flex items-center justify-between text-sm">
+                        <span className="flex items-center gap-1.5 text-text"><TrendingUp className="size-4 text-muted" aria-hidden />{label}</span>
+                        <span className="tabular text-xl font-semibold text-primary">%{value}</span>
+                      </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuenow={Number(value)} aria-valuemin={0} aria-valuemax={100} aria-label={String(label)}>
+                        <div className="h-full rounded-full bg-primary" style={{ width: `${value}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+            <WatchingCard items={d?.watching} />
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-3">
             <Card className="xl:col-span-2">
               <CardHeader title="Ekiplere göre durum" subtitle={PART_LABEL[part]} />
               <div className="h-72 px-2 py-4">
@@ -165,14 +193,15 @@ export function DashboardPage() {
                       <th key={c.key} scope="col" className="px-3 py-3 text-right font-medium">{c.label}</th>
                     ))}
                     <th scope="col" className="px-3 py-3 text-right font-medium">Toplam</th>
-                    <th scope="col" className="w-48 px-5 py-3 font-medium">İlerleme</th>
+                    <th scope="col" className="w-48 px-5 py-3 font-medium">Tamamlanan</th>
+                    <th scope="col" className="px-3 py-3 text-right font-medium">Ort. ilerleme</th>
                   </tr>
                 </thead>
                 <tbody>
                   {!d
                     ? Array.from({ length: 3 }).map((_, i) => (
                         <tr key={i}>
-                          <td colSpan={8} className="px-5 py-3"><Skeleton className="h-5" /></td>
+                          <td colSpan={9} className="px-5 py-3"><Skeleton className="h-5" /></td>
                         </tr>
                       ))
                     : d.teams.map((t) => (
@@ -192,6 +221,7 @@ export function DashboardPage() {
                               <span className="tabular w-10 text-right text-xs text-muted">%{pct(t[part].done, t[part].total)}</span>
                             </div>
                           </td>
+                          <td className="tabular px-3 py-3 text-right font-medium text-primary">%{t.avgProgress ?? 0}</td>
                         </tr>
                       ))}
                 </tbody>
@@ -207,6 +237,37 @@ export function DashboardPage() {
       )}
       <span className="sr-only" aria-live="polite">{dash.isFetching ? "Güncelleniyor" : ""}</span>
     </>
+  );
+}
+
+function WatchingCard({ items }: { items?: Schemas["DashboardSummary"]["watching"] }) {
+  return (
+    <Card className="xl:col-span-2">
+      <CardHeader
+        title="Yıldızlı task'larım"
+        subtitle="Takip ettiğiniz task'lardaki her güncelleme size bildirilir"
+        actions={<Link to="/tasks?watching=true" className="text-sm text-primary hover:underline">Tümü</Link>}
+      />
+      {!items ? (
+        <Skeleton className="m-5 h-24" />
+      ) : items.length === 0 ? (
+        <EmptyState title="Yıldızlı task yok" description="Task detayındaki yıldız ile takip etmeye başlayın." />
+      ) : (
+        <ul className="divide-y divide-border">
+          {items.map((t) => (
+            <li key={t.id}>
+              <Link to={`/tasks?watching=true&open=${t.id}`} className="flex items-center gap-3 px-5 py-2.5 hover:bg-surface-2">
+                <Star className="size-4 shrink-0 fill-blocked text-blocked" aria-hidden />
+                <span className="min-w-0 flex-1 truncate text-sm text-text">{t.title}</span>
+                <StatusBadge status={t.status} />
+                <span className="tabular w-12 text-right text-sm font-medium">%{t.progress}</span>
+                <span className="hidden w-24 text-right text-xs text-muted sm:inline">{fmtRelative(t.updatedAt)}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
 

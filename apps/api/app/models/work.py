@@ -9,6 +9,8 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    LargeBinary,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -16,7 +18,15 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.contract import ProjectStatus, Recurrence, TaskCategory, TaskPriority, TaskStatus, TaskType
+from app.contract import (
+    ProjectStatus,
+    Recurrence,
+    StakeholderRole,
+    TaskCategory,
+    TaskPriority,
+    TaskStatus,
+    TaskType,
+)
 from app.models.base import Base, created_at_col, enum_col, updated_at_col, uuid_pk
 from app.models.org import Team, User
 
@@ -58,6 +68,7 @@ class Task(Base):
         Index("ix_tasks_team_status_live", "team_id", "status", postgresql_where=text("deleted_at IS NULL")),
         Index("ix_tasks_assignee_status", "assignee_id", "status"),
         Index("ix_tasks_due_open", "due_date", postgresql_where=text("status <> 'DONE'")),
+        CheckConstraint("progress BETWEEN 0 AND 100", name="progress_range"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -76,6 +87,8 @@ class Task(Base):
     )
     assignee_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     backup_assignee_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    requester_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    progress: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
     due_date: Mapped[date | None] = mapped_column(Date)
     recurrence: Mapped[Recurrence] = mapped_column(
         enum_col(Recurrence, "recurrence"), default=Recurrence.NONE
@@ -95,6 +108,10 @@ class Task(Base):
     assignee: Mapped[User | None] = relationship(foreign_keys=[assignee_id], lazy="joined")
     backup_assignee: Mapped[User | None] = relationship(foreign_keys=[backup_assignee_id], lazy="joined")
     creator: Mapped[User | None] = relationship(foreign_keys=[created_by], lazy="joined")
+    requester: Mapped[User | None] = relationship(foreign_keys=[requester_id], lazy="joined")
+    collaborators: Mapped[list[User]] = relationship(
+        secondary="task_collaborators", lazy="selectin", order_by="User.full_name"
+    )
 
 
 class TaskComment(Base):
@@ -109,3 +126,80 @@ class TaskComment(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     author: Mapped[User] = relationship(lazy="joined")
+
+
+class TaskCollaborator(Base):
+    """Sorumlu ve yedeğe ek çalışma arkadaşları."""
+
+    __tablename__ = "task_collaborators"
+
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True, index=True)
+    created_at: Mapped[datetime] = created_at_col()
+
+
+class TaskWatcher(Base):
+    """Yıldız (watch): task'taki her güncellemede bildirim alır."""
+
+    __tablename__ = "task_watchers"
+
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True, index=True)
+    created_at: Mapped[datetime] = created_at_col()
+
+
+class TaskProgressEntry(Base):
+    """İlerleme tarihçesi (timeline) — yalnızca ekleme."""
+
+    __tablename__ = "task_progress_entries"
+    __table_args__ = (
+        CheckConstraint("from_progress BETWEEN 0 AND 100 AND to_progress BETWEEN 0 AND 100", name="range"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    from_progress: Mapped[int] = mapped_column(SmallInteger)
+    to_progress: Mapped[int] = mapped_column(SmallInteger)
+    note: Mapped[str] = mapped_column(String(500))
+    created_at: Mapped[datetime] = created_at_col()
+
+    author: Mapped[User] = relationship(lazy="joined")
+
+
+class Attachment(Base):
+    """Task eki. İçerik DB'de (bytea) tutulur; boyut sınırı servis katmanında."""
+
+    __tablename__ = "attachments"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    file_name: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(100))
+    size_bytes: Mapped[int]
+    sha256: Mapped[str] = mapped_column(String(64))
+    data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    uploaded_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = created_at_col()
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    uploader: Mapped[User] = relationship(lazy="joined")
+
+
+class ProjectStakeholder(Base):
+    __tablename__ = "project_stakeholders"
+    __table_args__ = (
+        CheckConstraint("user_id IS NOT NULL OR name IS NOT NULL", name="user_or_name"),
+        UniqueConstraint("project_id", "user_id", "role", name="uq_project_stakeholder_user_role"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    name: Mapped[str | None] = mapped_column(String(120))
+    organization: Mapped[str | None] = mapped_column(String(150))
+    role: Mapped[StakeholderRole] = mapped_column(enum_col(StakeholderRole, "stakeholder_role"))
+    note: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = created_at_col()
+
+    user: Mapped[User | None] = relationship(lazy="joined")

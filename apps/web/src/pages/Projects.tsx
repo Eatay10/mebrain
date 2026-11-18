@@ -1,16 +1,20 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, Plus } from "lucide-react";
+import { ArrowLeft, Building2, Crown, Network, Plus, Trash2, User as UserIcon, Users } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useParams } from "react-router";
 import { z } from "zod";
 import {
   errorMessage,
+  useAddStakeholder,
   useCreateProject,
   useProject,
+  useProjectOrganization,
   useProjects,
+  useRemoveStakeholder,
   useTeams,
   useUpdateProject,
+  useUsers,
   type Schemas,
 } from "../api/hooks";
 import { useAuth } from "../auth";
@@ -28,10 +32,11 @@ import {
   Select,
   Skeleton,
   Stat,
+  Tabs,
   Textarea,
   useToast,
 } from "../components/ui";
-import { projectStatusLabel } from "../i18n/tr";
+import { projectStatusLabel, stakeholderRoleLabel } from "../i18n/tr";
 import { fmtDate, pct } from "../lib/format";
 import { TasksPage } from "./Tasks";
 
@@ -182,6 +187,7 @@ export function ProjectDetailPage() {
   const { managesTeam, can } = useAuth();
   const project = useProject(projectId);
   const [editing, setEditing] = useState(false);
+  const [tab, setTab] = useState<"tasks" | "org">("tasks");
   if (project.isPending) return <Skeleton className="h-64" />;
   if (project.error) return <Card><ErrorState message={errorMessage(project.error)} /></Card>;
   const p = project.data;
@@ -201,9 +207,163 @@ export function ProjectDetailPage() {
         <Stat label="Tamamlandı" value={p.progress.done} tone="text-done" />
         <Stat label="İlerleme" value={`%${pct(p.progress.done, p.progress.total)}`} hint={`${p.progress.overdue} gecikmiş`} />
       </div>
-      <h2 className="mb-3 text-base font-semibold text-text">Proje task'ları</h2>
-      <TasksPage projectId={p.id} embedded />
+      <div className="mb-4">
+        <Tabs
+          value={tab}
+          onChange={setTab}
+          items={[
+            { value: "tasks", label: "Proje task'ları" },
+            { value: "org", label: "Organizasyon ve paydaşlar" },
+          ]}
+        />
+      </div>
+      {tab === "tasks" ? (
+        <TasksPage projectId={p.id} embedded />
+      ) : (
+        <ProjectOrganization projectId={p.id} canManage={managesTeam(p.teamId) && !can.readOnly} />
+      )}
       <ProjectFormModal open={editing} onClose={() => setEditing(false)} project={p} />
     </>
+  );
+}
+
+const KIND_ICON = {
+  DIRECTOR: <Crown className="size-4 text-blocked" aria-hidden />,
+  UNIT: <Building2 className="size-4 text-primary" aria-hidden />,
+  TEAM: <Users className="size-4 text-progress" aria-hidden />,
+  USER: <UserIcon className="size-4 text-muted" aria-hidden />,
+} as const;
+
+function OrgTree({ nodes }: { nodes: Schemas["OrgNode"][] }) {
+  return (
+    <ul className="space-y-1 border-l border-border pl-4">
+      {nodes.map((n) => (
+        <li key={`${n.kind}-${n.id}`}>
+          <div className="flex flex-wrap items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-surface-2">
+            {KIND_ICON[n.kind]}
+            <span className={n.kind === "USER" ? "text-sm text-text" : "text-sm font-semibold text-text"}>{n.name}</span>
+            {n.title && <span className="text-xs text-muted">{n.title}</span>}
+            {(n.projectRoles ?? []).map((r) => (
+              <Badge key={r} className="bg-primary-soft text-primary">{r}</Badge>
+            ))}
+          </div>
+          {n.children.length > 0 && <OrgTree nodes={n.children} />}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ProjectOrganization({ projectId, canManage }: { projectId: string; canManage: boolean }) {
+  const toast = useToast();
+  const org = useProjectOrganization(projectId);
+  const add = useAddStakeholder(projectId);
+  const remove = useRemoveStakeholder(projectId);
+  const users = useUsers({ pageSize: 100, isActive: true });
+  const [kind, setKind] = useState<"internal" | "external">("internal");
+  const [userId, setUserId] = useState("");
+  const [name, setName] = useState("");
+  const [organization, setOrganization] = useState("");
+  const [role, setRole] = useState<Schemas["StakeholderRole"]>("STAKEHOLDER");
+  if (org.isPending) return <Skeleton className="h-48" />;
+  if (org.error) return <Card><ErrorState message={errorMessage(org.error)} /></Card>;
+  const onError = (e: unknown) => toast("error", errorMessage(e));
+  return (
+    <div className="grid gap-6 xl:grid-cols-5">
+      <Card className="xl:col-span-3">
+        <div className="flex items-center gap-2 border-b border-border px-5 py-4">
+          <Network className="size-4 text-muted" aria-hidden />
+          <h3 className="font-semibold">Organizasyon ağacı</h3>
+          <span className="text-xs text-muted">Direktör → Unit → Ekip → Kişi; projede yer alan kişiler</span>
+        </div>
+        <div className="px-3 py-4">
+          {org.data.tree.length === 0 ? <EmptyState title="Projede henüz kimse yok" /> : <OrgTree nodes={org.data.tree} />}
+        </div>
+      </Card>
+      <Card className="xl:col-span-2">
+        <div className="border-b border-border px-5 py-4">
+          <h3 className="font-semibold">Paydaşlar</h3>
+        </div>
+        {org.data.stakeholders.length === 0 ? (
+          <EmptyState title="Paydaş eklenmemiş" />
+        ) : (
+          <ul className="divide-y divide-border">
+            {org.data.stakeholders.map((sh) => (
+              <li key={sh.id} className="flex items-center gap-3 px-5 py-2.5 text-sm">
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-text">{sh.name}</p>
+                  <p className="text-xs text-muted">
+                    {stakeholderRoleLabel[sh.role]}
+                    {sh.organization && ` · ${sh.organization}`}
+                    {!sh.user && " · dış paydaş"}
+                    {sh.note && ` · ${sh.note}`}
+                  </p>
+                </div>
+                {canManage && (
+                  <button
+                    className="p-1 text-muted hover:text-danger"
+                    aria-label={`${sh.name} paydaşını kaldır`}
+                    onClick={() => remove.mutate(sh.id, { onError })}
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {canManage && (
+          <form
+            className="space-y-3 border-t border-border px-5 py-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const body =
+                kind === "internal"
+                  ? { userId, role }
+                  : { name: name.trim(), organization: organization.trim() || undefined, role };
+              add.mutate(body, {
+                onSuccess: () => (setUserId(""), setName(""), setOrganization(""), toast("success", "Paydaş eklendi.")),
+                onError,
+              });
+            }}
+          >
+            <div className="flex gap-2 text-xs">
+              {(["internal", "external"] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  aria-pressed={kind === k}
+                  onClick={() => setKind(k)}
+                  className={kind === k ? "rounded-full bg-primary px-3 py-1 text-on-primary" : "rounded-full bg-surface-2 px-3 py-1"}
+                >
+                  {k === "internal" ? "Kurum içi" : "Dış paydaş"}
+                </button>
+              ))}
+            </div>
+            {kind === "internal" ? (
+              <Field label="Kişi" htmlFor="sh-user">
+                <Select id="sh-user" value={userId} onChange={(e) => setUserId(e.target.value)}>
+                  <option value="">Seçin…</option>
+                  {(users.data?.items ?? []).map((u) => <option key={u.id} value={u.id}>{u.fullName}{u.teamName ? ` — ${u.teamName}` : ""}</option>)}
+                </Select>
+              </Field>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Ad" htmlFor="sh-name"><Input id="sh-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} /></Field>
+                <Field label="Kurum / birim" htmlFor="sh-org"><Input id="sh-org" value={organization} onChange={(e) => setOrganization(e.target.value)} maxLength={150} /></Field>
+              </div>
+            )}
+            <Field label="Rol" htmlFor="sh-role">
+              <Select id="sh-role" value={role} onChange={(e) => setRole(e.target.value as Schemas["StakeholderRole"])}>
+                {Object.entries(stakeholderRoleLabel).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              </Select>
+            </Field>
+            <Button type="submit" size="sm" loading={add.isPending} disabled={kind === "internal" ? !userId : name.trim().length < 2}>
+              <Plus className="size-4" /> Paydaş ekle
+            </Button>
+          </form>
+        )}
+      </Card>
+    </div>
   );
 }

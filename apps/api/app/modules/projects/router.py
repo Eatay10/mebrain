@@ -74,3 +74,49 @@ def delete_project(
 ) -> Response:
     service.delete(db, user, projectId)
     return Response(status_code=204)
+
+
+@router.get(
+    "/projects/{projectId}/organization",
+    operation_id="getProjectOrganization",
+    response_model=c.ProjectOrganization,
+    dependencies=READ,
+)
+def project_organization(
+    projectId: UUID,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),  # noqa: N803
+) -> c.ProjectOrganization:
+    return service.organization(db, user, projectId)
+
+
+@router.post(
+    "/projects/{projectId}/stakeholders",
+    operation_id="addProjectStakeholder",
+    response_model=c.ProjectStakeholder,
+    status_code=201,
+    dependencies=[SessionOnly],
+)
+def add_stakeholder(
+    projectId: UUID,  # noqa: N803
+    body: c.ProjectStakeholderCreate,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> c.ProjectStakeholder:
+    return service.add_stakeholder(db, user, projectId, body)
+
+
+@router.delete(
+    "/projects/{projectId}/stakeholders/{stakeholderId}",
+    operation_id="removeProjectStakeholder",
+    status_code=204,
+    dependencies=[SessionOnly],
+)
+def remove_stakeholder(
+    projectId: UUID,  # noqa: N803
+    stakeholderId: UUID,  # noqa: N803
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    service.remove_stakeholder(db, user, projectId, stakeholderId)
+    return Response(status_code=204)

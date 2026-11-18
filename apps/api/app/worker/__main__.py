@@ -14,8 +14,14 @@ def main() -> None:
     sched.add_job(run, "cron", args=["overdue_notifications"], hour=9, minute=0)
     sched.add_job(run, "interval", args=["send_email_notifications"], minutes=1)
     sched.add_job(run, "interval", args=["cleanup_sessions"], hours=1)
+    sched.add_job(run, "interval", args=["run_report_schedules"], minutes=5)
     # Başlangıçta bir kez: kapalı kalınan süreyi telafi eder (idempotent).
-    for name in ("generate_recurring_tasks", "due_soon_notifications", "overdue_notifications"):
+    for name in (
+        "generate_recurring_tasks",
+        "due_soon_notifications",
+        "overdue_notifications",
+        "run_report_schedules",
+    ):
         run(name)
     log.info("worker_started")
     sched.start()

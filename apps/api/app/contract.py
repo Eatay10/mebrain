@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
-from enum import StrEnum
+from enum import Enum, StrEnum
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -14,6 +14,7 @@ from typing_extensions import TypeAliasType
 class Role(StrEnum):
     EMPLOYEE = "EMPLOYEE"
     MANAGER = "MANAGER"
+    UNIT_MANAGER = "UNIT_MANAGER"
     DIRECTOR = "DIRECTOR"
     AUDITOR = "AUDITOR"
 
@@ -113,6 +114,10 @@ class NotificationType(StrEnum):
     TASK_OVERDUE = "TASK_OVERDUE"
     PARTICIPATION_DECIDED = "PARTICIPATION_DECIDED"
     ANNOUNCEMENT = "ANNOUNCEMENT"
+    TASK_UPDATED = "TASK_UPDATED"
+    TASK_PROGRESS = "TASK_PROGRESS"
+    REPORT_READY = "REPORT_READY"
+    COMPETENCY_UPDATED = "COMPETENCY_UPDATED"
 
 
 class ApiScope(StrEnum):
@@ -262,6 +267,13 @@ class User(BaseModel):
     team_name: Annotated[str | None, Field(alias="teamName")] = None
     is_active: Annotated[bool, Field(alias="isActive")]
     last_login_at: Annotated[AwareDatetime | None, Field(alias="lastLoginAt")] = None
+    unit_id: Annotated[
+        UUID | None,
+        Field(
+            alias="unitId", description="Ekibin bağlı olduğu unit veya yönettiği unit"
+        ),
+    ] = None
+    unit_name: Annotated[str | None, Field(alias="unitName")] = None
 
 
 class UserPage(PageMeta):
@@ -307,6 +319,8 @@ class Team(BaseModel):
     description: str | None = None
     manager: UserRef | None = None
     member_count: Annotated[int, Field(alias="memberCount", ge=0)]
+    unit_id: Annotated[UUID | None, Field(alias="unitId")] = None
+    unit_name: Annotated[str | None, Field(alias="unitName")] = None
 
 
 class TeamCreate(BaseModel):
@@ -317,6 +331,7 @@ class TeamCreate(BaseModel):
     name: Annotated[str, Field(max_length=100, min_length=2)]
     description: Annotated[str | None, Field(max_length=1000)] = None
     manager_id: Annotated[UUID | None, Field(alias="managerId")] = None
+    unit_id: Annotated[UUID | None, Field(alias="unitId")] = None
 
 
 class TeamUpdate(BaseModel):
@@ -327,6 +342,7 @@ class TeamUpdate(BaseModel):
     name: Annotated[str | None, Field(max_length=100, min_length=2)] = None
     description: Annotated[str | None, Field(max_length=1000)] = None
     manager_id: Annotated[UUID | None, Field(alias="managerId")] = None
+    unit_id: Annotated[UUID | None, Field(alias="unitId")] = None
 
 
 class ProjectCreate(BaseModel):
@@ -363,45 +379,6 @@ class Project1(BaseModel):
     name: str
 
 
-class Task(BaseModel):
-    model_config = ConfigDict(
-        populate_by_name=True,
-    )
-    id: UUID
-    type: TaskType
-    team_id: Annotated[UUID, Field(alias="teamId")]
-    team_name: Annotated[str | None, Field(alias="teamName")] = None
-    project: Project1 | None = None
-    title: str
-    description: str | None = None
-    status: TaskStatus
-    blocked_reason: Annotated[str | None, Field(alias="blockedReason")] = None
-    priority: TaskPriority
-    category: TaskCategory
-    assignee: UserRef | None = None
-    backup_assignee: Annotated[UserRef | None, Field(alias="backupAssignee")] = None
-    due_date: Annotated[date | None, Field(alias="dueDate")] = None
-    is_overdue: Annotated[bool, Field(alias="isOverdue")]
-    recurrence: Recurrence
-    recurrence_parent_id: Annotated[UUID | None, Field(alias="recurrenceParentId")] = (
-        None
-    )
-    started_at: Annotated[AwareDatetime | None, Field(alias="startedAt")] = None
-    completed_at: Annotated[AwareDatetime | None, Field(alias="completedAt")] = None
-    created_by: Annotated[UserRef | None, Field(alias="createdBy")] = None
-    comment_count: Annotated[int | None, Field(alias="commentCount", ge=0)] = None
-    version: Annotated[int, Field(ge=1)]
-    created_at: Annotated[AwareDatetime, Field(alias="createdAt")]
-    updated_at: Annotated[AwareDatetime, Field(alias="updatedAt")]
-
-
-class TaskPage(PageMeta):
-    model_config = ConfigDict(
-        populate_by_name=True,
-    )
-    items: list[Task]
-
-
 class TaskCreate(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -418,6 +395,15 @@ class TaskCreate(BaseModel):
     backup_assignee_id: Annotated[UUID | None, Field(alias="backupAssigneeId")] = None
     due_date: Annotated[date | None, Field(alias="dueDate")] = None
     recurrence: Recurrence | None = None
+    requester_id: Annotated[UUID | None, Field(alias="requesterId")] = None
+    collaborator_ids: Annotated[
+        list[UUID] | None,
+        Field(
+            alias="collaboratorIds",
+            description="Sorumlu ve yedeğe ek çalışma arkadaşları",
+            max_length=20,
+        ),
+    ] = None
 
 
 class TaskUpdate(BaseModel):
@@ -436,6 +422,15 @@ class TaskUpdate(BaseModel):
     backup_assignee_id: Annotated[UUID | None, Field(alias="backupAssigneeId")] = None
     due_date: Annotated[date | None, Field(alias="dueDate")] = None
     recurrence: Recurrence | None = None
+    requester_id: Annotated[UUID | None, Field(alias="requesterId")] = None
+    collaborator_ids: Annotated[
+        list[UUID] | None,
+        Field(
+            alias="collaboratorIds",
+            description="Sorumlu ve yedeğe ek çalışma arkadaşları",
+            max_length=20,
+        ),
+    ] = None
 
 
 class TaskTransition(BaseModel):
@@ -505,6 +500,15 @@ class TeamDashboard(BaseModel):
     all: StatusCounts
     standard: StatusCounts
     project: StatusCounts
+    avg_progress: Annotated[
+        int | None,
+        Field(
+            alias="avgProgress",
+            description="Açık+kapalı task'ların ortalama ilerlemesi (%)",
+            ge=0,
+            le=100,
+        ),
+    ] = None
 
 
 class Project2(BaseModel):
@@ -623,6 +627,14 @@ class EventCreate(BaseModel):
     url: AnyUrl | None = None
     starts_at: Annotated[AwareDatetime, Field(alias="startsAt")]
     ends_at: Annotated[AwareDatetime, Field(alias="endsAt")]
+    notes: Annotated[str | None, Field(max_length=10000)] = None
+    competency_ids: Annotated[
+        list[UUID] | None, Field(alias="competencyIds", max_length=10)
+    ] = None
+    competency_points: Annotated[
+        int | None,
+        Field(alias="competencyPoints", description="Varsayılan 10", ge=1, le=50),
+    ] = None
 
 
 class EventUpdate(BaseModel):
@@ -638,6 +650,14 @@ class EventUpdate(BaseModel):
     url: AnyUrl | None = None
     starts_at: Annotated[AwareDatetime | None, Field(alias="startsAt")] = None
     ends_at: Annotated[AwareDatetime | None, Field(alias="endsAt")] = None
+    notes: Annotated[str | None, Field(max_length=10000)] = None
+    competency_ids: Annotated[
+        list[UUID] | None, Field(alias="competencyIds", max_length=10)
+    ] = None
+    competency_points: Annotated[
+        int | None,
+        Field(alias="competencyPoints", description="Varsayılan 10", ge=1, le=50),
+    ] = None
 
 
 class Participation(BaseModel):
@@ -714,6 +734,7 @@ class UserCompetency(BaseModel):
     verified_by: Annotated[UserRef | None, Field(alias="verifiedBy")] = None
     verified_at: Annotated[AwareDatetime | None, Field(alias="verifiedAt")] = None
     updated_at: Annotated[AwareDatetime, Field(alias="updatedAt")]
+    score: Annotated[int, Field(description="Yetkinlik puanı (%)", ge=0, le=100)]
 
 
 class UserCompetencyUpsert(BaseModel):
@@ -727,10 +748,16 @@ class UserCompetencyUpsert(BaseModel):
         bool | None,
         Field(description="Sadece yönetici+ set edebilir; çalışan gönderirse 403"),
     ] = None
+    score: Annotated[int | None, Field(ge=0, le=100)] = None
 
 
 LevelsAdditionalProperty = TypeAliasType(
     "LevelsAdditionalProperty", Annotated[int, Field(ge=1, le=5)]
+)
+
+
+ScoresAdditionalProperty = TypeAliasType(
+    "ScoresAdditionalProperty", Annotated[int, Field(ge=0, le=100)]
 )
 
 
@@ -743,6 +770,10 @@ class Member(BaseModel):
         dict[str, LevelsAdditionalProperty],
         Field(description="competencyId → seviye (1–5)"),
     ]
+    scores: Annotated[
+        dict[str, ScoresAdditionalProperty] | None,
+        Field(description="competencyId → puan (0–100)"),
+    ] = None
 
 
 class CompetencyMatrix(BaseModel):
@@ -890,6 +921,305 @@ class MetricsSummary(BaseModel):
     jobs: list[Job]
 
 
+class ReportFrequency(StrEnum):
+    WEEKLY = "WEEKLY"
+    MONTHLY = "MONTHLY"
+
+
+class ReportGroupBy(StrEnum):
+    TEAM = "team"
+    ASSIGNEE = "assignee"
+    PROJECT = "project"
+    STATUS = "status"
+    PRIORITY = "priority"
+    CATEGORY = "category"
+    TYPE = "type"
+
+
+class StakeholderRole(StrEnum):
+    SPONSOR = "SPONSOR"
+    OWNER = "OWNER"
+    LEAD = "LEAD"
+    MEMBER = "MEMBER"
+    STAKEHOLDER = "STAKEHOLDER"
+    OBSERVER = "OBSERVER"
+
+
+class OrgNodeKind(StrEnum):
+    DIRECTOR = "DIRECTOR"
+    UNIT = "UNIT"
+    TEAM = "TEAM"
+    USER = "USER"
+
+
+class Unit(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: UUID
+    name: str
+    description: str | None = None
+    manager: UserRef | None = None
+    team_count: Annotated[int, Field(alias="teamCount", ge=0)]
+
+
+class UnitCreate(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    name: Annotated[str, Field(max_length=100, min_length=2)]
+    description: Annotated[str | None, Field(max_length=1000)] = None
+    manager_id: Annotated[UUID | None, Field(alias="managerId")] = None
+
+
+class UnitUpdate(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    name: Annotated[str | None, Field(max_length=100, min_length=2)] = None
+    description: Annotated[str | None, Field(max_length=1000)] = None
+    manager_id: Annotated[UUID | None, Field(alias="managerId")] = None
+
+
+class AssignableUser(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: UUID
+    full_name: Annotated[str, Field(alias="fullName")]
+    title: str | None = None
+    role: Role
+    team_id: Annotated[UUID | None, Field(alias="teamId")] = None
+    team_name: Annotated[str | None, Field(alias="teamName")] = None
+
+
+class Competency1(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    name: str
+    score: Annotated[int, Field(ge=0, le=100)]
+
+
+class AssigneeSuggestion(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    user: AssignableUser
+    score: Annotated[
+        int,
+        Field(
+            description="İlgili alanlardaki yetkinlik puanı ortalaması", ge=0, le=100
+        ),
+    ]
+    competencies: list[Competency1]
+
+
+class TaskProgressUpdate(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    progress: Annotated[int, Field(description="İlerleme yüzdesi", ge=0, le=100)]
+    note: Annotated[
+        str,
+        Field(
+            description="Kısa açıklama; watcher bildirimine eklenir",
+            max_length=500,
+            min_length=1,
+        ),
+    ]
+    version: Annotated[int, Field(ge=1)]
+
+
+class ProgressEntry(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: UUID
+    task_id: Annotated[UUID, Field(alias="taskId")]
+    author: UserRef
+    from_progress: Annotated[
+        int, Field(alias="fromProgress", description="İlerleme yüzdesi", ge=0, le=100)
+    ]
+    to_progress: Annotated[
+        int, Field(alias="toProgress", description="İlerleme yüzdesi", ge=0, le=100)
+    ]
+    note: str
+    created_at: Annotated[AwareDatetime, Field(alias="createdAt")]
+
+
+class Attachment(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: UUID
+    task_id: Annotated[UUID | None, Field(alias="taskId")] = None
+    file_name: Annotated[str, Field(alias="fileName")]
+    content_type: Annotated[str, Field(alias="contentType")]
+    size_bytes: Annotated[int, Field(alias="sizeBytes", ge=0)]
+    uploaded_by: Annotated[UserRef, Field(alias="uploadedBy")]
+    created_at: Annotated[AwareDatetime, Field(alias="createdAt")]
+
+
+class LastStatus1(Enum):
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+    NONE_TYPE_NONE = None
+
+
+class ReportSchedule(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: UUID
+    name: str
+    frequency: ReportFrequency
+    group_by: Annotated[ReportGroupBy, Field(alias="groupBy")]
+    team_id: Annotated[UUID | None, Field(alias="teamId")] = None
+    active: bool
+    next_run_at: Annotated[AwareDatetime, Field(alias="nextRunAt")]
+    last_run_at: Annotated[AwareDatetime | None, Field(alias="lastRunAt")] = None
+    last_status: Annotated[LastStatus1 | None, Field(alias="lastStatus")] = None
+    created_at: Annotated[AwareDatetime, Field(alias="createdAt")]
+
+
+class ReportScheduleCreate(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    name: Annotated[str, Field(max_length=100, min_length=2)]
+    frequency: ReportFrequency
+    group_by: Annotated[ReportGroupBy, Field(alias="groupBy")]
+    team_id: Annotated[UUID | None, Field(alias="teamId")] = None
+
+
+class ReportScheduleUpdate(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    name: Annotated[str | None, Field(max_length=100, min_length=2)] = None
+    frequency: ReportFrequency | None = None
+    group_by: Annotated[ReportGroupBy | None, Field(alias="groupBy")] = None
+    active: bool | None = None
+
+
+class ProjectStakeholder(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: UUID
+    user: UserRef | None = None
+    name: str
+    organization: str | None = None
+    role: StakeholderRole
+    note: str | None = None
+
+
+class ProjectStakeholderCreate(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    user_id: Annotated[UUID | None, Field(alias="userId")] = None
+    name: Annotated[str | None, Field(max_length=120, min_length=2)] = None
+    organization: Annotated[str | None, Field(max_length=150)] = None
+    role: StakeholderRole
+    note: Annotated[str | None, Field(max_length=500)] = None
+
+
+class OrgNode(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: UUID
+    kind: OrgNodeKind
+    name: str
+    title: str | None = None
+    project_roles: Annotated[
+        list[str] | None,
+        Field(
+            alias="projectRoles",
+            description="Kişinin projedeki rolleri (sahip, sorumlu, paydaş…)",
+        ),
+    ] = None
+    children: list[OrgNode]
+
+
+class ProjectOrganization(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    project_id: Annotated[UUID, Field(alias="projectId")]
+    tree: Annotated[
+        list[OrgNode],
+        Field(
+            description="Direktör → unit → ekip → kişi; sadece projede yer alan kişiler ve üst zinciri"
+        ),
+    ]
+    stakeholders: list[ProjectStakeholder]
+
+
+class CompetencyGain(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    competency_id: Annotated[UUID, Field(alias="competencyId")]
+    name: str
+    points: Annotated[int, Field(ge=1, le=50)]
+
+
+class Certification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: UUID
+    user_id: Annotated[UUID, Field(alias="userId")]
+    name: Annotated[str, Field(description="OSCP, CISSP, CEH…")]
+    issuer: str | None = None
+    issued_on: Annotated[date, Field(alias="issuedOn")]
+    expires_on: Annotated[date | None, Field(alias="expiresOn")] = None
+    credential_url: Annotated[str | None, Field(alias="credentialUrl")] = None
+    competencies: list[CompetencyGain]
+    created_at: Annotated[AwareDatetime, Field(alias="createdAt")]
+
+
+class CertificationCreate(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    name: Annotated[str, Field(max_length=100, min_length=2)]
+    issuer: Annotated[str | None, Field(max_length=100)] = None
+    issued_on: Annotated[date, Field(alias="issuedOn")]
+    expires_on: Annotated[date | None, Field(alias="expiresOn")] = None
+    credential_url: Annotated[AnyUrl | None, Field(alias="credentialUrl")] = None
+    competency_ids: Annotated[
+        list[UUID] | None, Field(alias="competencyIds", max_length=10)
+    ] = None
+    points: Annotated[
+        int | None,
+        Field(description="Her ilgili yetkinliğe eklenecek puan", ge=1, le=50),
+    ] = 15
+
+
+class EventPhoto(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: UUID
+    event_id: Annotated[UUID, Field(alias="eventId")]
+    caption: str | None = None
+    content_type: Annotated[str, Field(alias="contentType")]
+    size_bytes: Annotated[int, Field(alias="sizeBytes", ge=0)]
+    uploaded_by: Annotated[UserRef, Field(alias="uploadedBy")]
+    created_at: Annotated[AwareDatetime, Field(alias="createdAt")]
+
+
 class Session(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -925,6 +1255,65 @@ class ProjectPage(PageMeta):
     items: list[Project]
 
 
+class Task(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: UUID
+    type: TaskType
+    team_id: Annotated[UUID, Field(alias="teamId")]
+    team_name: Annotated[str | None, Field(alias="teamName")] = None
+    project: Project1 | None = None
+    title: str
+    description: str | None = None
+    status: TaskStatus
+    blocked_reason: Annotated[str | None, Field(alias="blockedReason")] = None
+    priority: TaskPriority
+    category: TaskCategory
+    assignee: UserRef | None = None
+    backup_assignee: Annotated[UserRef | None, Field(alias="backupAssignee")] = None
+    due_date: Annotated[date | None, Field(alias="dueDate")] = None
+    is_overdue: Annotated[bool, Field(alias="isOverdue")]
+    recurrence: Recurrence
+    recurrence_parent_id: Annotated[UUID | None, Field(alias="recurrenceParentId")] = (
+        None
+    )
+    started_at: Annotated[AwareDatetime | None, Field(alias="startedAt")] = None
+    completed_at: Annotated[AwareDatetime | None, Field(alias="completedAt")] = None
+    created_by: Annotated[UserRef | None, Field(alias="createdBy")] = None
+    comment_count: Annotated[int | None, Field(alias="commentCount", ge=0)] = None
+    version: Annotated[int, Field(ge=1)]
+    created_at: Annotated[AwareDatetime, Field(alias="createdAt")]
+    updated_at: Annotated[AwareDatetime, Field(alias="updatedAt")]
+    progress: Annotated[int, Field(description="İlerleme yüzdesi", ge=0, le=100)]
+    requester: UserRef | None = None
+    collaborators: list[UserRef]
+    is_watching: Annotated[
+        bool,
+        Field(alias="isWatching", description="Oturumdaki kullanıcı yıldız koymuş mu"),
+    ]
+    watcher_count: Annotated[int, Field(alias="watcherCount", ge=0)]
+    attachment_count: Annotated[int | None, Field(alias="attachmentCount", ge=0)] = None
+
+
+class TaskPage(PageMeta):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    items: list[Task]
+
+
+class WatchingItem(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: UUID
+    title: str
+    status: TaskStatus
+    progress: Annotated[int, Field(description="İlerleme yüzdesi", ge=0, le=100)]
+    updated_at: Annotated[AwareDatetime, Field(alias="updatedAt")]
+
+
 class DashboardSummary(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -939,6 +1328,14 @@ class DashboardSummary(BaseModel):
             description="Kapsamdaki aktif projelerin ilerlemesi (en fazla 10, son tarihe göre)"
         ),
     ]
+    avg_progress: Annotated[int | None, Field(alias="avgProgress", ge=0, le=100)] = None
+    mine_avg_progress: Annotated[
+        int | None, Field(alias="mineAvgProgress", ge=0, le=100)
+    ] = None
+    watching: Annotated[
+        list[WatchingItem] | None,
+        Field(description="Yıldızlı task'lar (en fazla 10, son güncellenen önce)"),
+    ] = None
 
 
 class Event(BaseModel):
@@ -962,6 +1359,14 @@ class Event(BaseModel):
     my_participation: Annotated[
         Participation | None, Field(alias="myParticipation")
     ] = None
+    notes: Annotated[
+        str | None, Field(description="Konferans notları / öğrenilenler")
+    ] = None
+    competencies: Annotated[
+        list[CompetencyGain] | None,
+        Field(description="Katılım tamamlanınca artacak yetkinlikler"),
+    ] = None
+    photo_count: Annotated[int | None, Field(alias="photoCount", ge=0)] = None
 
 
 class EventPage(PageMeta):
@@ -969,3 +1374,6 @@ class EventPage(PageMeta):
         populate_by_name=True,
     )
     items: list[Event]
+
+
+OrgNode.model_rebuild()

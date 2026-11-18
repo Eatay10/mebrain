@@ -14,7 +14,7 @@ from app.auth.scope import team_filter, visible_team_ids
 from app.contract import Role
 from app.core.errors import BadRequest, Conflict, NotFound
 from app.core.schemas import PageParams, to_user
-from app.models import Team, User, UserSession
+from app.models import Team, Unit, User, UserSession
 from app.modules.tasks.repository import escape_like
 from app.security_events.service import emit
 
@@ -55,8 +55,8 @@ def list_users(
 
 
 def _validate_team(db: Session, role: Role, team_id: UUID | None) -> None:
-    if role in TEAMLESS_ROLES:
-        return
+    if role in TEAMLESS_ROLES or (role == Role.UNIT_MANAGER and team_id is None):
+        return  # unit yöneticisi bir ekibe bağlı olmak zorunda değil
     if team_id is None:
         raise BadRequest(errors=[{"field": "teamId", "message": "Çalışan ve yönetici için ekip zorunlu."}])
     if db.get(Team, team_id) is None:
@@ -127,9 +127,12 @@ def update(db: Session, user: User, user_id: UUID, body: c.UserUpdate) -> c.User
             "ROLE_CHANGED",
             details={"target": str(target.id), "from": changes["role"][0], "to": changes["role"][1]},
         )
-        if target.role != Role.MANAGER:  # yönetici değilse yönettiği ekiplerden çıkar
+        if target.role not in (Role.MANAGER, Role.UNIT_MANAGER):  # yönetici değilse ekiplerden çıkar
             for team in db.scalars(select(Team).where(Team.manager_id == target.id)):
                 team.manager_id = None
+        if target.role != Role.UNIT_MANAGER:  # unit yöneticisi değilse unit'lerden çıkar
+            for unit in db.scalars(select(Unit).where(Unit.manager_id == target.id)):
+                unit.manager_id = None
     if "is_active" in changes and not target.is_active:
         db.execute(delete(UserSession).where(UserSession.user_id == target.id))
         record(db, "user.deactivate", "user", target.id)

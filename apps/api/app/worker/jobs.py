@@ -176,7 +176,14 @@ def cleanup_sessions(db: Session) -> int:
     return res.rowcount or 0
 
 
+def run_report_schedules(db: Session) -> int:
+    from app.modules.reports.schedules import run_due
+
+    return run_due(db)
+
+
 JOBS: dict[str, Callable[[Session], int]] = {
+    "run_report_schedules": run_report_schedules,
     "generate_recurring_tasks": generate_recurring_tasks,
     "due_soon_notifications": due_soon_notifications,
     "overdue_notifications": overdue_notifications,

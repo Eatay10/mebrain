@@ -11,9 +11,7 @@ _ENV_FILES = tuple(str(p / ".env") for p in Path(__file__).resolve().parents if 
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=_ENV_FILES or None, env_file_encoding="utf-8", extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=_ENV_FILES or None, env_file_encoding="utf-8", extra="ignore")
 
     database_url: str = Field(alias="DATABASE_URL")
     migration_database_url: str | None = Field(default=None, alias="MIGRATION_DATABASE_URL")
@@ -31,6 +29,7 @@ class Settings(BaseSettings):
     seed_password: str | None = Field(default=None, alias="CTH_SEED_PASSWORD")
 
     max_body_bytes: int = Field(default=256 * 1024, alias="CTH_MAX_BODY_BYTES")
+    max_upload_bytes: int = Field(default=10 * 1024 * 1024, alias="CTH_MAX_UPLOAD_BYTES")
     rate_limit_anonymous_per_min: int = Field(default=30, alias="CTH_RATE_ANON")
     rate_limit_authenticated_per_min: int = Field(default=300, alias="CTH_RATE_AUTH")
     rate_limit_login_per_min: int = Field(default=10, alias="CTH_RATE_LOGIN")

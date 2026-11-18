@@ -592,6 +592,11 @@ paths:
             type: string
             enum: [dueDate, -dueDate, priority, -priority, createdAt, -createdAt, updatedAt, -updatedAt]
             default: -updatedAt
+        - name: watching
+          in: query
+          schema:
+            type: boolean
+          description: Sadece yıldızlı task'lar
       responses:
         '200':
           description: Task listesi
@@ -1524,6 +1529,702 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /tasks/assignee-suggestions:
+    get:
+      tags:
+        - Tasks
+      operationId: suggestAssignees
+      summary: Yetkinliğe göre sorumlu önerisi
+      description: Oturumdaki kullanıcının atayabileceği kişiler, task kategorisiyle ilişkili yetkinlik puanlarına göre sıralı (en fazla 5).
+      parameters:
+        - name: category
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/TaskCategory'
+        - name: teamId
+          in: query
+          schema: &id001
+            $ref: '#/components/schemas/Id'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AssigneeSuggestion'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me/assignable-users:
+    get:
+      tags:
+        - Me
+      operationId: listAssignableUsers
+      summary: Atama yapılabilecek kişiler
+      description: Direktör → unit yöneticileri (ve herkes), unit yöneticisi → unit'indeki yöneticiler ve ekipler, yönetici → ekip üyeleri, çalışan → kendisi.
+      parameters:
+        - name: teamId
+          in: query
+          schema: *id001
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AssignableUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /tasks/{taskId}/progress:
+    parameters: &id002
+      - name: taskId
+        in: path
+        required: true
+        schema: *id001
+        description: UUID
+    get:
+      tags:
+        - Tasks
+      operationId: listTaskProgress
+      summary: İlerleme tarihçesi (timeline)
+      responses:
+        '200':
+          description: Eskiden yeniye
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProgressEntry'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+        - Tasks
+      operationId: updateTaskProgress
+      summary: İlerlemeyi güncelle
+      description: "Timeline kaydı oluşturur ve watcher'lara '<kişi> ilerlemeyi %X yaptı: <not>' bildirimi gönderir."
+      parameters:
+        - &id003
+          $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskProgressUpdate'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /tasks/{taskId}/watch:
+    parameters: *id002
+    put:
+      tags:
+        - Tasks
+      operationId: watchTask
+      summary: Task'a yıldız koy (takip et)
+      parameters:
+        - *id003
+      responses:
+        '204':
+          description: Takip ediliyor
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+        - Tasks
+      operationId: unwatchTask
+      summary: Yıldızı kaldır
+      parameters:
+        - *id003
+      responses:
+        '204':
+          description: Takip bırakıldı
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tasks/{taskId}/watchers:
+    parameters: *id002
+    get:
+      tags:
+        - Tasks
+      operationId: listTaskWatchers
+      summary: Task'ı takip edenler
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserRef'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tasks/{taskId}/attachments:
+    parameters: *id002
+    get:
+      tags:
+        - Tasks
+      operationId: listTaskAttachments
+      summary: Task ekleri
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Attachment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+        - Tasks
+      operationId: uploadTaskAttachment
+      summary: Ek yükle (en fazla 10 MB)
+      parameters:
+        - *id003
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Yüklendi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attachment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /attachments/{attachmentId}:
+    parameters:
+      - name: attachmentId
+        in: path
+        required: true
+        schema: *id001
+        description: UUID
+    get:
+      tags:
+        - Tasks
+      operationId: downloadAttachment
+      summary: Eki indir
+      responses:
+        '200':
+          description: Dosya içeriği
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+        - Tasks
+      operationId: deleteAttachment
+      summary: Eki sil (yükleyen veya yönetici)
+      parameters:
+        - *id003
+      responses:
+        '204':
+          description: Silindi
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /units:
+    get:
+      tags:
+        - Teams
+      operationId: listUnits
+      summary: Unit'ler
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Unit'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags:
+        - Teams
+      operationId: createUnit
+      summary: Unit oluştur (direktör)
+      parameters:
+        - *id003
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnitCreate'
+      responses:
+        '201':
+          description: Oluşturuldu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Unit'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /units/{unitId}:
+    parameters:
+      - name: unitId
+        in: path
+        required: true
+        schema: *id001
+        description: UUID
+    patch:
+      tags:
+        - Teams
+      operationId: updateUnit
+      summary: Unit güncelle (direktör)
+      parameters:
+        - *id003
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnitUpdate'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Unit'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /report-schedules:
+    get:
+      tags:
+        - Reports
+      operationId: listReportSchedules
+      summary: Planlı raporlarım
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReportSchedule'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags:
+        - Reports
+      operationId: createReportSchedule
+      summary: Haftalık/aylık rapor planla
+      description: Worker, haftalık planları pazartesi 08:00, aylıkları ayın 1'i 08:00'de (Europe/Istanbul) önceki dönem için çalıştırır; CSV e-postayla gönderilir.
+      parameters:
+        - *id003
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportScheduleCreate'
+      responses:
+        '201':
+          description: Oluşturuldu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportSchedule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /report-schedules/{scheduleId}:
+    parameters:
+      - name: scheduleId
+        in: path
+        required: true
+        schema: *id001
+        description: UUID
+    patch:
+      tags:
+        - Reports
+      operationId: updateReportSchedule
+      summary: Planı güncelle
+      parameters:
+        - *id003
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportScheduleUpdate'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportSchedule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+        - Reports
+      operationId: deleteReportSchedule
+      summary: Planı sil
+      parameters:
+        - *id003
+      responses:
+        '204':
+          description: Silindi
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /report-schedules/{scheduleId}/run:
+    parameters:
+      - name: scheduleId
+        in: path
+        required: true
+        schema: *id001
+        description: UUID
+    post:
+      tags:
+        - Reports
+      operationId: runReportSchedule
+      summary: Planı hemen çalıştır
+      parameters:
+        - *id003
+      responses:
+        '202':
+          description: Rapor e-postası kuyruğa alındı
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /projects/{projectId}/organization:
+    parameters: &id004
+      - &id005
+        $ref: '#/components/parameters/ProjectId'
+    get:
+      tags:
+        - Projects
+      operationId: getProjectOrganization
+      summary: Projenin organizasyon ağacı ve paydaşları
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectOrganization'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /projects/{projectId}/stakeholders:
+    parameters: *id004
+    post:
+      tags:
+        - Projects
+      operationId: addProjectStakeholder
+      summary: Paydaş ekle
+      parameters:
+        - *id003
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectStakeholderCreate'
+      responses:
+        '201':
+          description: Eklendi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectStakeholder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /projects/{projectId}/stakeholders/{stakeholderId}:
+    parameters:
+      - *id005
+      - name: stakeholderId
+        in: path
+        required: true
+        schema: *id001
+        description: UUID
+    delete:
+      tags:
+        - Projects
+      operationId: removeProjectStakeholder
+      summary: Paydaşı kaldır
+      parameters:
+        - *id003
+      responses:
+        '204':
+          description: Kaldırıldı
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /users/{userId}/certifications:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags:
+        - Competencies
+      operationId: listCertifications
+      summary: Kullanıcının sertifikaları
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Certification'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+        - Competencies
+      operationId: addCertification
+      summary: Sertifika ekle
+      description: Kişi kendisine veya yöneticisi ekleyebilir; ilgili yetkinlik puanları `points` kadar artar (en fazla 100).
+      parameters:
+        - *id003
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CertificationCreate'
+      responses:
+        '201':
+          description: Eklendi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Certification'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /certifications/{certificationId}:
+    parameters:
+      - name: certificationId
+        in: path
+        required: true
+        schema: *id001
+        description: UUID
+    delete:
+      tags:
+        - Competencies
+      operationId: deleteCertification
+      summary: Sertifikayı sil
+      parameters:
+        - *id003
+      responses:
+        '204':
+          description: Silindi
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /events/{eventId}/photos:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags:
+        - Events
+      operationId: listEventPhotos
+      summary: Etkinlik fotoğrafları
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EventPhoto'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+        - Events
+      operationId: uploadEventPhoto
+      summary: Fotoğraf yükle (JPEG/PNG/WebP, en fazla 10 MB)
+      parameters:
+        - *id003
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                caption:
+                  type: string
+                  maxLength: 300
+      responses:
+        '201':
+          description: Yüklendi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventPhoto'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /event-photos/{photoId}:
+    parameters:
+      - name: photoId
+        in: path
+        required: true
+        schema: *id001
+        description: UUID
+    get:
+      tags:
+        - Events
+      operationId: getEventPhoto
+      summary: Fotoğraf içeriği
+      responses:
+        '200':
+          description: Görsel
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+        - Events
+      operationId: deleteEventPhoto
+      summary: Fotoğrafı sil
+      parameters:
+        - *id003
+      responses:
+        '204':
+          description: Silindi
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 components:
   securitySchemes:
     cookieAuth:
@@ -1649,7 +2350,13 @@ components:
       format: uuid
     Role:
       type: string
-      enum: [EMPLOYEE, MANAGER, DIRECTOR, AUDITOR]
+      enum:
+        - EMPLOYEE
+        - MANAGER
+        - UNIT_MANAGER
+        - DIRECTOR
+        - AUDITOR
+      description: 'Organizasyon: Direktör → Unit (UNIT_MANAGER) → Ekip (MANAGER) → Ekip üyesi (EMPLOYEE). AUDITOR salt-okunur.'
     TaskType:
       type: string
       enum: [STANDARD, PROJECT]
@@ -1685,7 +2392,7 @@ components:
       enum: [OFFENSIVE, DEFENSIVE, GRC, CLOUD, APPSEC, FORENSICS, NETWORK, OTHER]
     NotificationType:
       type: string
-      enum: [TASK_ASSIGNED, TASK_BACKUP_ASSIGNED, TASK_STATUS_CHANGED, TASK_COMMENTED, TASK_DUE_SOON, TASK_OVERDUE, PARTICIPATION_DECIDED, ANNOUNCEMENT]
+      enum: [TASK_ASSIGNED, TASK_BACKUP_ASSIGNED, TASK_STATUS_CHANGED, TASK_COMMENTED, TASK_DUE_SOON, TASK_OVERDUE, PARTICIPATION_DECIDED, ANNOUNCEMENT, TASK_UPDATED, TASK_PROGRESS, REPORT_READY, COMPETENCY_UPDATED]
     ApiScope:
       type: string
       enum: ['tasks:read', 'tasks:write', 'projects:read', 'reports:read', 'events:read', 'events:write', 'competencies:read']
@@ -1876,6 +2583,15 @@ components:
         lastLoginAt:
           type: [string, 'null']
           format: date-time
+        unitId:
+          oneOf:
+            - *id001
+            - type: 'null'
+          description: Ekibin bağlı olduğu unit veya yönettiği unit
+        unitName:
+          type:
+            - string
+            - 'null'
     UserPage:
       allOf:
         - $ref: '#/components/schemas/PageMeta'
@@ -1945,6 +2661,14 @@ components:
         memberCount:
           type: integer
           minimum: 0
+        unitId:
+          oneOf:
+            - *id001
+            - type: 'null'
+        unitName:
+          type:
+            - string
+            - 'null'
     TeamCreate:
       type: object
       required: [name]
@@ -1959,6 +2683,7 @@ components:
           maxLength: 1000
         managerId:
           $ref: '#/components/schemas/Id'
+        unitId: *id001
     TeamUpdate:
       type: object
       additionalProperties: false
@@ -1977,6 +2702,10 @@ components:
             - type: 'null'
 
     # -------- projects
+        unitId:
+          oneOf:
+            - *id001
+            - type: 'null'
     Project:
       type: object
       required: [id, teamId, name, status, progress, createdAt]
@@ -2068,7 +2797,7 @@ components:
     # -------- tasks
     Task:
       type: object
-      required: [id, type, teamId, title, status, priority, category, recurrence, isOverdue, version, createdAt, updatedAt]
+      required: [id, type, teamId, title, status, priority, category, recurrence, isOverdue, version, createdAt, updatedAt, progress, collaborators, isWatching, watcherCount]
       properties:
         id:
           $ref: '#/components/schemas/Id'
@@ -2139,6 +2868,25 @@ components:
         updatedAt:
           type: string
           format: date-time
+        progress:
+          $ref: '#/components/schemas/Progress'
+        requester:
+          oneOf:
+            - $ref: '#/components/schemas/UserRef'
+            - type: 'null'
+        collaborators:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserRef'
+        isWatching:
+          type: boolean
+          description: Oturumdaki kullanıcı yıldız koymuş mu
+        watcherCount:
+          type: integer
+          minimum: 0
+        attachmentCount:
+          type: integer
+          minimum: 0
     TaskPage:
       allOf:
         - $ref: '#/components/schemas/PageMeta'
@@ -2181,6 +2929,13 @@ components:
           format: date
         recurrence:
           $ref: '#/components/schemas/Recurrence'
+        requesterId: *id001
+        collaboratorIds:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: *id001
+          description: Sorumlu ve yedeğe ek çalışma arkadaşları
     TaskUpdate:
       type: object
       required: [version]
@@ -2214,6 +2969,16 @@ components:
           format: date
         recurrence:
           $ref: '#/components/schemas/Recurrence'
+        requesterId:
+          oneOf:
+            - *id001
+            - type: 'null'
+        collaboratorIds:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: *id001
+          description: Sorumlu ve yedeğe ek çalışma arkadaşları
     TaskTransition:
       type: object
       required: [to, version]
@@ -2305,6 +3070,11 @@ components:
           $ref: '#/components/schemas/StatusCounts'
         project:
           $ref: '#/components/schemas/StatusCounts'
+        avgProgress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Açık+kapalı task'ların ortalama ilerlemesi (%)
     DashboardSummary:
       type: object
       required: [generatedAt, totals, teams, mine, projects]
@@ -2338,6 +3108,36 @@ components:
                 format: date
               progress:
                 $ref: '#/components/schemas/StatusCounts'
+        avgProgress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        mineAvgProgress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        watching:
+          type: array
+          description: Yıldızlı task'lar (en fazla 10, son güncellenen önce)
+          items:
+            type: object
+            required:
+              - id
+              - title
+              - status
+              - progress
+              - updatedAt
+            properties:
+              id: *id001
+              title:
+                type: string
+              status:
+                $ref: '#/components/schemas/TaskStatus'
+              progress:
+                $ref: '#/components/schemas/Progress'
+              updatedAt:
+                type: string
+                format: date-time
     TeamDashboardTotals:
       type: object
       required: [all, standard, project]
@@ -2505,6 +3305,19 @@ components:
           oneOf:
             - $ref: '#/components/schemas/Participation'
             - type: 'null'
+        notes:
+          type:
+            - string
+            - 'null'
+          description: Konferans notları / öğrenilenler
+        competencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompetencyGain'
+          description: Katılım tamamlanınca artacak yetkinlikler
+        photoCount:
+          type: integer
+          minimum: 0
     EventPage:
       allOf:
         - $ref: '#/components/schemas/PageMeta'
@@ -2548,6 +3361,19 @@ components:
         endsAt:
           type: string
           format: date-time
+        notes:
+          type: string
+          maxLength: 10000
+        competencyIds:
+          type: array
+          maxItems: 10
+          uniqueItems: true
+          items: *id001
+        competencyPoints:
+          type: integer
+          minimum: 1
+          maximum: 50
+          description: Varsayılan 10
     EventUpdate:
       type: object
       additionalProperties: false
@@ -2579,6 +3405,21 @@ components:
         endsAt:
           type: string
           format: date-time
+        notes:
+          type:
+            - string
+            - 'null'
+          maxLength: 10000
+        competencyIds:
+          type: array
+          maxItems: 10
+          uniqueItems: true
+          items: *id001
+        competencyPoints:
+          type: integer
+          minimum: 1
+          maximum: 50
+          description: Varsayılan 10
     Participation:
       type: object
       required: [id, eventId, user, role, status, createdAt]
@@ -2659,7 +3500,7 @@ components:
           maxLength: 1000
     UserCompetency:
       type: object
-      required: [userId, competency, level, updatedAt]
+      required: [userId, competency, level, updatedAt, score]
       properties:
         userId:
           $ref: '#/components/schemas/Id'
@@ -2681,6 +3522,11 @@ components:
         updatedAt:
           type: string
           format: date-time
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Yetkinlik puanı (%)
     UserCompetencyUpsert:
       type: object
       required: [level]
@@ -2696,6 +3542,10 @@ components:
         verified:
           type: boolean
           description: Sadece yönetici+ set edebilir; çalışan gönderirse 403
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
     CompetencyMatrix:
       type: object
       required: [teamId, competencies, members]
@@ -2723,6 +3573,13 @@ components:
                   maximum: 5
 
     # -------- audit & security
+              scores:
+                type: object
+                description: competencyId → puan (0–100)
+                additionalProperties:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
     AuditLogEntry:
       type: object
       required: [id, occurredAt, actorType, action, result]
@@ -2902,3 +3759,489 @@ components:
                 enum: [SUCCESS, FAILED, NEVER_RAN]
               lastDurationMs:
                 type: [integer, 'null']
+    ReportFrequency:
+      type: string
+      enum:
+        - WEEKLY
+        - MONTHLY
+    ReportGroupBy:
+      type: string
+      enum:
+        - team
+        - assignee
+        - project
+        - status
+        - priority
+        - category
+        - type
+    StakeholderRole:
+      type: string
+      enum:
+        - SPONSOR
+        - OWNER
+        - LEAD
+        - MEMBER
+        - STAKEHOLDER
+        - OBSERVER
+    OrgNodeKind:
+      type: string
+      enum:
+        - DIRECTOR
+        - UNIT
+        - TEAM
+        - USER
+    Progress:
+      type: integer
+      minimum: 0
+      maximum: 100
+      description: İlerleme yüzdesi
+    Unit:
+      type: object
+      required:
+        - id
+        - name
+        - teamCount
+      properties:
+        id: *id001
+        name:
+          type: string
+        description:
+          type:
+            - string
+            - 'null'
+        manager:
+          oneOf:
+            - $ref: '#/components/schemas/UserRef'
+            - type: 'null'
+        teamCount:
+          type: integer
+          minimum: 0
+    UnitCreate:
+      type: object
+      required:
+        - name
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 1000
+        managerId: *id001
+    UnitUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        description:
+          type:
+            - string
+            - 'null'
+          maxLength: 1000
+        managerId:
+          oneOf:
+            - *id001
+            - type: 'null'
+    AssignableUser:
+      type: object
+      required:
+        - id
+        - fullName
+        - role
+      properties:
+        id: *id001
+        fullName:
+          type: string
+        title:
+          type:
+            - string
+            - 'null'
+        role:
+          $ref: '#/components/schemas/Role'
+        teamId:
+          oneOf:
+            - *id001
+            - type: 'null'
+        teamName:
+          type:
+            - string
+            - 'null'
+    AssigneeSuggestion:
+      type: object
+      required:
+        - user
+        - score
+        - competencies
+      properties:
+        user:
+          $ref: '#/components/schemas/AssignableUser'
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: İlgili alanlardaki yetkinlik puanı ortalaması
+        competencies:
+          type: array
+          items:
+            type: object
+            required:
+              - name
+              - score
+            properties:
+              name:
+                type: string
+              score:
+                type: integer
+                minimum: 0
+                maximum: 100
+    TaskProgressUpdate:
+      type: object
+      required:
+        - progress
+        - note
+        - version
+      additionalProperties: false
+      properties:
+        progress:
+          $ref: '#/components/schemas/Progress'
+        note:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Kısa açıklama; watcher bildirimine eklenir
+        version:
+          type: integer
+          minimum: 1
+    ProgressEntry:
+      type: object
+      required:
+        - id
+        - taskId
+        - author
+        - fromProgress
+        - toProgress
+        - note
+        - createdAt
+      properties:
+        id: *id001
+        taskId: *id001
+        author:
+          $ref: '#/components/schemas/UserRef'
+        fromProgress:
+          $ref: '#/components/schemas/Progress'
+        toProgress:
+          $ref: '#/components/schemas/Progress'
+        note:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    Attachment:
+      type: object
+      required:
+        - id
+        - fileName
+        - contentType
+        - sizeBytes
+        - uploadedBy
+        - createdAt
+      properties:
+        id: *id001
+        taskId:
+          oneOf:
+            - *id001
+            - type: 'null'
+        fileName:
+          type: string
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+          minimum: 0
+        uploadedBy:
+          $ref: '#/components/schemas/UserRef'
+        createdAt:
+          type: string
+          format: date-time
+    ReportSchedule:
+      type: object
+      required:
+        - id
+        - name
+        - frequency
+        - groupBy
+        - active
+        - nextRunAt
+        - createdAt
+      properties:
+        id: *id001
+        name:
+          type: string
+        frequency:
+          $ref: '#/components/schemas/ReportFrequency'
+        groupBy:
+          $ref: '#/components/schemas/ReportGroupBy'
+        teamId:
+          oneOf:
+            - *id001
+            - type: 'null'
+        active:
+          type: boolean
+        nextRunAt:
+          type: string
+          format: date-time
+        lastRunAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        lastStatus:
+          type:
+            - string
+            - 'null'
+          enum:
+            - SUCCESS
+            - FAILED
+            - 
+        createdAt:
+          type: string
+          format: date-time
+    ReportScheduleCreate:
+      type: object
+      required:
+        - name
+        - frequency
+        - groupBy
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        frequency:
+          $ref: '#/components/schemas/ReportFrequency'
+        groupBy:
+          $ref: '#/components/schemas/ReportGroupBy'
+        teamId: *id001
+    ReportScheduleUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        frequency:
+          $ref: '#/components/schemas/ReportFrequency'
+        groupBy:
+          $ref: '#/components/schemas/ReportGroupBy'
+        active:
+          type: boolean
+    ProjectStakeholder:
+      type: object
+      required:
+        - id
+        - name
+        - role
+      properties:
+        id: *id001
+        user:
+          oneOf:
+            - $ref: '#/components/schemas/UserRef'
+            - type: 'null'
+        name:
+          type: string
+        organization:
+          type:
+            - string
+            - 'null'
+        role:
+          $ref: '#/components/schemas/StakeholderRole'
+        note:
+          type:
+            - string
+            - 'null'
+    ProjectStakeholderCreate:
+      type: object
+      required:
+        - role
+      additionalProperties: false
+      description: Kurum içi paydaş için userId, dış paydaş için name (+organization) verilir.
+      properties:
+        userId: *id001
+        name:
+          type: string
+          minLength: 2
+          maxLength: 120
+        organization:
+          type: string
+          maxLength: 150
+        role:
+          $ref: '#/components/schemas/StakeholderRole'
+        note:
+          type: string
+          maxLength: 500
+    OrgNode:
+      type: object
+      required:
+        - id
+        - kind
+        - name
+        - children
+      properties:
+        id: *id001
+        kind:
+          $ref: '#/components/schemas/OrgNodeKind'
+        name:
+          type: string
+        title:
+          type:
+            - string
+            - 'null'
+        projectRoles:
+          type: array
+          items:
+            type: string
+          description: Kişinin projedeki rolleri (sahip, sorumlu, paydaş…)
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrgNode'
+    ProjectOrganization:
+      type: object
+      required:
+        - projectId
+        - tree
+        - stakeholders
+      properties:
+        projectId: *id001
+        tree:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrgNode'
+          description: Direktör → unit → ekip → kişi; sadece projede yer alan kişiler ve üst zinciri
+        stakeholders:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectStakeholder'
+    CompetencyGain:
+      type: object
+      required:
+        - competencyId
+        - name
+        - points
+      properties:
+        competencyId: *id001
+        name:
+          type: string
+        points:
+          type: integer
+          minimum: 1
+          maximum: 50
+    Certification:
+      type: object
+      required:
+        - id
+        - userId
+        - name
+        - issuedOn
+        - competencies
+        - createdAt
+      properties:
+        id: *id001
+        userId: *id001
+        name:
+          type: string
+          description: OSCP, CISSP, CEH…
+        issuer:
+          type:
+            - string
+            - 'null'
+        issuedOn:
+          type: string
+          format: date
+        expiresOn:
+          type:
+            - string
+            - 'null'
+          format: date
+        credentialUrl:
+          type:
+            - string
+            - 'null'
+        competencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompetencyGain'
+        createdAt:
+          type: string
+          format: date-time
+    CertificationCreate:
+      type: object
+      required:
+        - name
+        - issuedOn
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        issuer:
+          type: string
+          maxLength: 100
+        issuedOn:
+          type: string
+          format: date
+        expiresOn:
+          type: string
+          format: date
+        credentialUrl:
+          type: string
+          format: uri
+          pattern: ^https://
+          maxLength: 500
+        competencyIds:
+          type: array
+          maxItems: 10
+          uniqueItems: true
+          items: *id001
+        points:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 15
+          description: Her ilgili yetkinliğe eklenecek puan
+    EventPhoto:
+      type: object
+      required:
+        - id
+        - eventId
+        - contentType
+        - sizeBytes
+        - uploadedBy
+        - createdAt
+      properties:
+        id: *id001
+        eventId: *id001
+        caption:
+          type:
+            - string
+            - 'null'
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+          minimum: 0
+        uploadedBy:
+          $ref: '#/components/schemas/UserRef'
+        createdAt:
+          type: string
+          format: date-time

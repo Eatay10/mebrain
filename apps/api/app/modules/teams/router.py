@@ -37,3 +37,25 @@ def update_team(
     db: Session = Depends(get_db),
 ) -> c.Team:
     return service.update(db, user, teamId, body)
+
+
+@router.get("/units", operation_id="listUnits", response_model=list[c.Unit])
+def list_units(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[c.Unit]:
+    return service.list_units(db, user)
+
+
+@router.post("/units", operation_id="createUnit", response_model=c.Unit, status_code=201)
+def create_unit(
+    body: c.UnitCreate, user: User = Depends(current_user), db: Session = Depends(get_db)
+) -> c.Unit:
+    return service.create_unit(db, user, body)
+
+
+@router.patch("/units/{unitId}", operation_id="updateUnit", response_model=c.Unit)
+def update_unit(
+    unitId: UUID,
+    body: c.UnitUpdate,
+    user: User = Depends(current_user),  # noqa: N803
+    db: Session = Depends(get_db),
+) -> c.Unit:
+    return service.update_unit(db, user, unitId, body)

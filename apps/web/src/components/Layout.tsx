@@ -130,7 +130,7 @@ export function Layout() {
     { to: "/reports", label: "Raporlar", icon: <ChartColumn className="size-4" /> },
     { to: "/announcements", label: "Duyurular", icon: <Megaphone className="size-4" /> },
     { to: "/security", label: "Güvenlik & İzleme", icon: <ShieldAlert className="size-4" />, show: can.observe || can.audit },
-    { to: "/admin", label: "Kullanıcı & Ekip", icon: <Users className="size-4" />, show: can.direct },
+    { to: "/admin", label: "Organizasyon", icon: <Users className="size-4" />, show: can.direct },
     { to: "/settings/tokens", label: "API & MCP", icon: <KeyRound className="size-4" /> },
   ];
   const sidebar = (

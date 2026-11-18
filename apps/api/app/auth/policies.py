@@ -8,7 +8,14 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.auth.scope import in_scope, is_read_only, managed_team_ids, visible_team_ids
+from app.auth.scope import (
+    MANAGING_ROLES,
+    in_scope,
+    is_involved,
+    is_read_only,
+    managed_team_ids,
+    visible_team_ids,
+)
 from app.contract import EventScope, ParticipationStatus, Role, TaskStatus, TaskType
 from app.core.errors import Forbidden
 from app.models import Event, EventParticipation, Project, Task, User
@@ -27,7 +34,14 @@ def _manages(db: Session, user: User, team_id: UUID | None) -> bool:
 
 # ------------------------------------------------------------------ tasks
 def can_read_task(db: Session, user: User, task: Task) -> bool:
-    return in_scope(task.team_id, visible_team_ids(db, user))
+    return in_scope(task.team_id, visible_team_ids(db, user)) or is_involved(task, user.id)
+
+
+def is_task_worker(task: Task, user: User) -> bool:
+    """Sorumlu, yedek veya çalışma arkadaşı."""
+    return user.id in (task.assignee_id, task.backup_assignee_id) or any(
+        c.id == user.id for c in task.collaborators
+    )
 
 
 def can_create_task(
@@ -51,7 +65,19 @@ def can_transition(db: Session, user: User, task: Task, to: TaskStatus) -> bool:
         return True
     if task.status == TaskStatus.DONE:  # yeniden açma sadece yönetici+
         return False
-    return user.id in (task.assignee_id, task.backup_assignee_id)
+    return is_task_worker(task, user)
+
+
+def can_update_progress(db: Session, user: User, task: Task) -> bool:
+    if is_read_only(user):
+        return False
+    return _manages(db, user, task.team_id) or is_task_worker(task, user)
+
+
+def can_attach(db: Session, user: User, task: Task) -> bool:
+    return not is_read_only(user) and (
+        _manages(db, user, task.team_id) or is_task_worker(task, user) or task.requester_id == user.id
+    )
 
 
 def can_delete_task(db: Session, user: User, task: Task) -> bool:
@@ -117,7 +143,21 @@ def can_decide_participation(db: Session, user: User, p: EventParticipation, to:
 
 # ------------------------------------------------------------------ competencies
 def can_manage_catalog(user: User) -> bool:
-    return user.role in (Role.MANAGER, Role.DIRECTOR)
+    return user.role in MANAGING_ROLES
+
+
+def can_add_certification(db: Session, user: User, target: User) -> bool:
+    if is_read_only(user):
+        return False
+    return user.id == target.id or user.role == Role.DIRECTOR or is_manager_of(db, user, target)
+
+
+def can_manage_units(user: User) -> bool:
+    return user.role == Role.DIRECTOR
+
+
+def can_schedule_reports(user: User) -> bool:
+    return user.role in (*MANAGING_ROLES, Role.AUDITOR)
 
 
 def can_verify_competency(db: Session, user: User, target: User) -> bool:
@@ -138,7 +178,7 @@ def can_announce(db: Session, user: User, scope: str, team_id: UUID | None) -> b
 
 
 def can_read_audit(user: User) -> bool:
-    return user.role in (Role.MANAGER, Role.DIRECTOR, Role.AUDITOR)
+    return user.role in (*MANAGING_ROLES, Role.AUDITOR)
 
 
 def can_read_security(user: User) -> bool:

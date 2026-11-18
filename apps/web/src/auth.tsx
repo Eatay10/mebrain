@@ -8,7 +8,7 @@ type Ctx = {
   session: Schemas["Session"];
   user: Schemas["User"];
   can: {
-    manage: boolean; // yönetici veya direktör (yazma)
+    manage: boolean; // yönetici, unit yöneticisi veya direktör (yazma)
     direct: boolean; // direktör
     readOnly: boolean; // denetmen
     observe: boolean; // güvenlik/observability ekranları
@@ -41,7 +41,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     session,
     user: session.user,
     can: {
-      manage: role === "MANAGER" || role === "DIRECTOR",
+      manage: role === "MANAGER" || role === "UNIT_MANAGER" || role === "DIRECTOR",
       direct: role === "DIRECTOR",
       readOnly: role === "AUDITOR",
       observe: role === "DIRECTOR" || role === "AUDITOR",

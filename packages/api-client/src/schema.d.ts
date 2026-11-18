@@ -699,14 +699,407 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tasks/assignee-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Yetkinliğe göre sorumlu önerisi
+         * @description Oturumdaki kullanıcının atayabileceği kişiler, task kategorisiyle ilişkili yetkinlik puanlarına göre sıralı (en fazla 5).
+         */
+        get: operations["suggestAssignees"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/assignable-users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Atama yapılabilecek kişiler
+         * @description Direktör → unit yöneticileri (ve herkes), unit yöneticisi → unit'indeki yöneticiler ve ekipler, yönetici → ekip üyeleri, çalışan → kendisi.
+         */
+        get: operations["listAssignableUsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tasks/{taskId}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID */
+                taskId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        /** İlerleme tarihçesi (timeline) */
+        get: operations["listTaskProgress"];
+        put?: never;
+        /**
+         * İlerlemeyi güncelle
+         * @description Timeline kaydı oluşturur ve watcher'lara '<kişi> ilerlemeyi %X yaptı: <not>' bildirimi gönderir.
+         */
+        post: operations["updateTaskProgress"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tasks/{taskId}/watch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID */
+                taskId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Task'a yıldız koy (takip et) */
+        put: operations["watchTask"];
+        post?: never;
+        /** Yıldızı kaldır */
+        delete: operations["unwatchTask"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tasks/{taskId}/watchers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID */
+                taskId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        /** Task'ı takip edenler */
+        get: operations["listTaskWatchers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tasks/{taskId}/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID */
+                taskId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        /** Task ekleri */
+        get: operations["listTaskAttachments"];
+        put?: never;
+        /** Ek yükle (en fazla 10 MB) */
+        post: operations["uploadTaskAttachment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/attachments/{attachmentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID */
+                attachmentId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        /** Eki indir */
+        get: operations["downloadAttachment"];
+        put?: never;
+        post?: never;
+        /** Eki sil (yükleyen veya yönetici) */
+        delete: operations["deleteAttachment"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/units": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Unit'ler */
+        get: operations["listUnits"];
+        put?: never;
+        /** Unit oluştur (direktör) */
+        post: operations["createUnit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/units/{unitId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID */
+                unitId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Unit güncelle (direktör) */
+        patch: operations["updateUnit"];
+        trace?: never;
+    };
+    "/report-schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Planlı raporlarım */
+        get: operations["listReportSchedules"];
+        put?: never;
+        /**
+         * Haftalık/aylık rapor planla
+         * @description Worker, haftalık planları pazartesi 08:00, aylıkları ayın 1'i 08:00'de (Europe/Istanbul) önceki dönem için çalıştırır; CSV e-postayla gönderilir.
+         */
+        post: operations["createReportSchedule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/report-schedules/{scheduleId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID */
+                scheduleId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Planı sil */
+        delete: operations["deleteReportSchedule"];
+        options?: never;
+        head?: never;
+        /** Planı güncelle */
+        patch: operations["updateReportSchedule"];
+        trace?: never;
+    };
+    "/report-schedules/{scheduleId}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID */
+                scheduleId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Planı hemen çalıştır */
+        post: operations["runReportSchedule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/organization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /** Projenin organizasyon ağacı ve paydaşları */
+        get: operations["getProjectOrganization"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/stakeholders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Paydaş ekle */
+        post: operations["addProjectStakeholder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/stakeholders/{stakeholderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                /** @description UUID */
+                stakeholderId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Paydaşı kaldır */
+        delete: operations["removeProjectStakeholder"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{userId}/certifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        /** Kullanıcının sertifikaları */
+        get: operations["listCertifications"];
+        put?: never;
+        /**
+         * Sertifika ekle
+         * @description Kişi kendisine veya yöneticisi ekleyebilir; ilgili yetkinlik puanları `points` kadar artar (en fazla 100).
+         */
+        post: operations["addCertification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/certifications/{certificationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID */
+                certificationId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Sertifikayı sil */
+        delete: operations["deleteCertification"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/events/{eventId}/photos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        /** Etkinlik fotoğrafları */
+        get: operations["listEventPhotos"];
+        put?: never;
+        /** Fotoğraf yükle (JPEG/PNG/WebP, en fazla 10 MB) */
+        post: operations["uploadEventPhoto"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/event-photos/{photoId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID */
+                photoId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        /** Fotoğraf içeriği */
+        get: operations["getEventPhoto"];
+        put?: never;
+        post?: never;
+        /** Fotoğrafı sil */
+        delete: operations["deleteEventPhoto"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /** Format: uuid */
         Id: string;
-        /** @enum {string} */
-        Role: "EMPLOYEE" | "MANAGER" | "DIRECTOR" | "AUDITOR";
+        /**
+         * @description Organizasyon: Direktör → Unit (UNIT_MANAGER) → Ekip (MANAGER) → Ekip üyesi (EMPLOYEE). AUDITOR salt-okunur.
+         * @enum {string}
+         */
+        Role: "EMPLOYEE" | "MANAGER" | "UNIT_MANAGER" | "DIRECTOR" | "AUDITOR";
         /** @enum {string} */
         TaskType: "STANDARD" | "PROJECT";
         /** @enum {string} */
@@ -730,7 +1123,7 @@ export interface components {
         /** @enum {string} */
         CompetencyCategory: "OFFENSIVE" | "DEFENSIVE" | "GRC" | "CLOUD" | "APPSEC" | "FORENSICS" | "NETWORK" | "OTHER";
         /** @enum {string} */
-        NotificationType: "TASK_ASSIGNED" | "TASK_BACKUP_ASSIGNED" | "TASK_STATUS_CHANGED" | "TASK_COMMENTED" | "TASK_DUE_SOON" | "TASK_OVERDUE" | "PARTICIPATION_DECIDED" | "ANNOUNCEMENT";
+        NotificationType: "TASK_ASSIGNED" | "TASK_BACKUP_ASSIGNED" | "TASK_STATUS_CHANGED" | "TASK_COMMENTED" | "TASK_DUE_SOON" | "TASK_OVERDUE" | "PARTICIPATION_DECIDED" | "ANNOUNCEMENT" | "TASK_UPDATED" | "TASK_PROGRESS" | "REPORT_READY" | "COMPETENCY_UPDATED";
         /** @enum {string} */
         ApiScope: "tasks:read" | "tasks:write" | "projects:read" | "reports:read" | "events:read" | "events:write" | "competencies:read";
         /** @enum {string} */
@@ -817,6 +1210,9 @@ export interface components {
             isActive: boolean;
             /** Format: date-time */
             lastLoginAt?: string | null;
+            /** @description Ekibin bağlı olduğu unit veya yönettiği unit */
+            unitId?: components["schemas"]["Id"] | null;
+            unitName?: string | null;
         };
         UserPage: components["schemas"]["PageMeta"] & {
             items: components["schemas"]["User"][];
@@ -843,16 +1239,20 @@ export interface components {
             description?: string | null;
             manager?: components["schemas"]["UserRef"] | null;
             memberCount: number;
+            unitId?: components["schemas"]["Id"] | null;
+            unitName?: string | null;
         };
         TeamCreate: {
             name: string;
             description?: string;
             managerId?: components["schemas"]["Id"];
+            unitId?: components["schemas"]["Id"];
         };
         TeamUpdate: {
             name?: string;
             description?: string;
             managerId?: components["schemas"]["Id"] | null;
+            unitId?: components["schemas"]["Id"] | null;
         };
         Project: {
             id: components["schemas"]["Id"];
@@ -926,6 +1326,13 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+            progress: components["schemas"]["Progress"];
+            requester?: components["schemas"]["UserRef"] | null;
+            collaborators: components["schemas"]["UserRef"][];
+            /** @description Oturumdaki kullanıcı yıldız koymuş mu */
+            isWatching: boolean;
+            watcherCount: number;
+            attachmentCount?: number;
         };
         TaskPage: components["schemas"]["PageMeta"] & {
             items: components["schemas"]["Task"][];
@@ -944,6 +1351,9 @@ export interface components {
             /** Format: date */
             dueDate?: string;
             recurrence?: components["schemas"]["Recurrence"];
+            requesterId?: components["schemas"]["Id"];
+            /** @description Sorumlu ve yedeğe ek çalışma arkadaşları */
+            collaboratorIds?: components["schemas"]["Id"][];
         };
         TaskUpdate: {
             /** @description Optimistic locking; uyuşmazsa 409 */
@@ -957,6 +1367,9 @@ export interface components {
             /** Format: date */
             dueDate?: string | null;
             recurrence?: components["schemas"]["Recurrence"];
+            requesterId?: components["schemas"]["Id"] | null;
+            /** @description Sorumlu ve yedeğe ek çalışma arkadaşları */
+            collaboratorIds?: components["schemas"]["Id"][];
         };
         TaskTransition: {
             to: components["schemas"]["TaskStatus"];
@@ -997,6 +1410,8 @@ export interface components {
             all: components["schemas"]["StatusCounts"];
             standard: components["schemas"]["StatusCounts"];
             project: components["schemas"]["StatusCounts"];
+            /** @description Açık+kapalı task'ların ortalama ilerlemesi (%) */
+            avgProgress?: number;
         };
         DashboardSummary: {
             /** Format: date-time */
@@ -1012,6 +1427,17 @@ export interface components {
                 /** Format: date */
                 dueDate?: string | null;
                 progress: components["schemas"]["StatusCounts"];
+            }[];
+            avgProgress?: number;
+            mineAvgProgress?: number;
+            /** @description Yıldızlı task'lar (en fazla 10, son güncellenen önce) */
+            watching?: {
+                id: components["schemas"]["Id"];
+                title: string;
+                status: components["schemas"]["TaskStatus"];
+                progress: components["schemas"]["Progress"];
+                /** Format: date-time */
+                updatedAt: string;
             }[];
         };
         TeamDashboardTotals: {
@@ -1089,6 +1515,11 @@ export interface components {
             createdBy: components["schemas"]["UserRef"];
             participantCount?: number;
             myParticipation?: components["schemas"]["Participation"] | null;
+            /** @description Konferans notları / öğrenilenler */
+            notes?: string | null;
+            /** @description Katılım tamamlanınca artacak yetkinlikler */
+            competencies?: components["schemas"]["CompetencyGain"][];
+            photoCount?: number;
         };
         EventPage: components["schemas"]["PageMeta"] & {
             items: components["schemas"]["Event"][];
@@ -1106,6 +1537,10 @@ export interface components {
             startsAt: string;
             /** Format: date-time */
             endsAt: string;
+            notes?: string;
+            competencyIds?: components["schemas"]["Id"][];
+            /** @description Varsayılan 10 */
+            competencyPoints?: number;
         };
         EventUpdate: {
             title?: string;
@@ -1119,6 +1554,10 @@ export interface components {
             startsAt?: string;
             /** Format: date-time */
             endsAt?: string;
+            notes?: string | null;
+            competencyIds?: components["schemas"]["Id"][];
+            /** @description Varsayılan 10 */
+            competencyPoints?: number;
         };
         Participation: {
             id: components["schemas"]["Id"];
@@ -1165,12 +1604,15 @@ export interface components {
             verifiedAt?: string | null;
             /** Format: date-time */
             updatedAt: string;
+            /** @description Yetkinlik puanı (%) */
+            score: number;
         };
         UserCompetencyUpsert: {
             level: number;
             evidence?: string;
             /** @description Sadece yönetici+ set edebilir; çalışan gönderirse 403 */
             verified?: boolean;
+            score?: number;
         };
         CompetencyMatrix: {
             teamId: components["schemas"]["Id"];
@@ -1179,6 +1621,10 @@ export interface components {
                 user: components["schemas"]["UserRef"];
                 /** @description competencyId → seviye (1–5) */
                 levels: {
+                    [key: string]: number;
+                };
+                /** @description competencyId → puan (0–100) */
+                scores?: {
                     [key: string]: number;
                 };
             }[];
@@ -1268,6 +1714,181 @@ export interface components {
                 lastStatus: "SUCCESS" | "FAILED" | "NEVER_RAN";
                 lastDurationMs?: number | null;
             }[];
+        };
+        /** @enum {string} */
+        ReportFrequency: "WEEKLY" | "MONTHLY";
+        /** @enum {string} */
+        ReportGroupBy: "team" | "assignee" | "project" | "status" | "priority" | "category" | "type";
+        /** @enum {string} */
+        StakeholderRole: "SPONSOR" | "OWNER" | "LEAD" | "MEMBER" | "STAKEHOLDER" | "OBSERVER";
+        /** @enum {string} */
+        OrgNodeKind: "DIRECTOR" | "UNIT" | "TEAM" | "USER";
+        /** @description İlerleme yüzdesi */
+        Progress: number;
+        Unit: {
+            id: components["schemas"]["Id"];
+            name: string;
+            description?: string | null;
+            manager?: components["schemas"]["UserRef"] | null;
+            teamCount: number;
+        };
+        UnitCreate: {
+            name: string;
+            description?: string;
+            managerId?: components["schemas"]["Id"];
+        };
+        UnitUpdate: {
+            name?: string;
+            description?: string | null;
+            managerId?: components["schemas"]["Id"] | null;
+        };
+        AssignableUser: {
+            id: components["schemas"]["Id"];
+            fullName: string;
+            title?: string | null;
+            role: components["schemas"]["Role"];
+            teamId?: components["schemas"]["Id"] | null;
+            teamName?: string | null;
+        };
+        AssigneeSuggestion: {
+            user: components["schemas"]["AssignableUser"];
+            /** @description İlgili alanlardaki yetkinlik puanı ortalaması */
+            score: number;
+            competencies: {
+                name: string;
+                score: number;
+            }[];
+        };
+        TaskProgressUpdate: {
+            progress: components["schemas"]["Progress"];
+            /** @description Kısa açıklama; watcher bildirimine eklenir */
+            note: string;
+            version: number;
+        };
+        ProgressEntry: {
+            id: components["schemas"]["Id"];
+            taskId: components["schemas"]["Id"];
+            author: components["schemas"]["UserRef"];
+            fromProgress: components["schemas"]["Progress"];
+            toProgress: components["schemas"]["Progress"];
+            note: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        Attachment: {
+            id: components["schemas"]["Id"];
+            taskId?: components["schemas"]["Id"] | null;
+            fileName: string;
+            contentType: string;
+            sizeBytes: number;
+            uploadedBy: components["schemas"]["UserRef"];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ReportSchedule: {
+            id: components["schemas"]["Id"];
+            name: string;
+            frequency: components["schemas"]["ReportFrequency"];
+            groupBy: components["schemas"]["ReportGroupBy"];
+            teamId?: components["schemas"]["Id"] | null;
+            active: boolean;
+            /** Format: date-time */
+            nextRunAt: string;
+            /** Format: date-time */
+            lastRunAt?: string | null;
+            /** @enum {string|null} */
+            lastStatus?: "SUCCESS" | "FAILED" | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ReportScheduleCreate: {
+            name: string;
+            frequency: components["schemas"]["ReportFrequency"];
+            groupBy: components["schemas"]["ReportGroupBy"];
+            teamId?: components["schemas"]["Id"];
+        };
+        ReportScheduleUpdate: {
+            name?: string;
+            frequency?: components["schemas"]["ReportFrequency"];
+            groupBy?: components["schemas"]["ReportGroupBy"];
+            active?: boolean;
+        };
+        ProjectStakeholder: {
+            id: components["schemas"]["Id"];
+            user?: components["schemas"]["UserRef"] | null;
+            name: string;
+            organization?: string | null;
+            role: components["schemas"]["StakeholderRole"];
+            note?: string | null;
+        };
+        /** @description Kurum içi paydaş için userId, dış paydaş için name (+organization) verilir. */
+        ProjectStakeholderCreate: {
+            userId?: components["schemas"]["Id"];
+            name?: string;
+            organization?: string;
+            role: components["schemas"]["StakeholderRole"];
+            note?: string;
+        };
+        OrgNode: {
+            id: components["schemas"]["Id"];
+            kind: components["schemas"]["OrgNodeKind"];
+            name: string;
+            title?: string | null;
+            /** @description Kişinin projedeki rolleri (sahip, sorumlu, paydaş…) */
+            projectRoles?: string[];
+            children: components["schemas"]["OrgNode"][];
+        };
+        ProjectOrganization: {
+            projectId: components["schemas"]["Id"];
+            /** @description Direktör → unit → ekip → kişi; sadece projede yer alan kişiler ve üst zinciri */
+            tree: components["schemas"]["OrgNode"][];
+            stakeholders: components["schemas"]["ProjectStakeholder"][];
+        };
+        CompetencyGain: {
+            competencyId: components["schemas"]["Id"];
+            name: string;
+            points: number;
+        };
+        Certification: {
+            id: components["schemas"]["Id"];
+            userId: components["schemas"]["Id"];
+            /** @description OSCP, CISSP, CEH… */
+            name: string;
+            issuer?: string | null;
+            /** Format: date */
+            issuedOn: string;
+            /** Format: date */
+            expiresOn?: string | null;
+            credentialUrl?: string | null;
+            competencies: components["schemas"]["CompetencyGain"][];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        CertificationCreate: {
+            name: string;
+            issuer?: string;
+            /** Format: date */
+            issuedOn: string;
+            /** Format: date */
+            expiresOn?: string;
+            /** Format: uri */
+            credentialUrl?: string;
+            competencyIds?: components["schemas"]["Id"][];
+            /**
+             * @description Her ilgili yetkinliğe eklenecek puan
+             * @default 15
+             */
+            points: number;
+        };
+        EventPhoto: {
+            id: components["schemas"]["Id"];
+            eventId: components["schemas"]["Id"];
+            caption?: string | null;
+            contentType: string;
+            sizeBytes: number;
+            uploadedBy: components["schemas"]["UserRef"];
+            /** Format: date-time */
+            createdAt: string;
         };
     };
     responses: {
@@ -1951,6 +2572,8 @@ export interface operations {
                 dueFrom?: string;
                 dueTo?: string;
                 sort?: "dueDate" | "-dueDate" | "priority" | "-priority" | "createdAt" | "-createdAt" | "updatedAt" | "-updatedAt";
+                /** @description Sadece yıldızlı task'lar */
+                watching?: boolean;
             };
             header?: never;
             path?: never;
@@ -2959,6 +3582,812 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    suggestAssignees: {
+        parameters: {
+            query: {
+                category: components["schemas"]["TaskCategory"];
+                teamId?: components["schemas"]["Id"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssigneeSuggestion"][];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listAssignableUsers: {
+        parameters: {
+            query?: {
+                teamId?: components["schemas"]["Id"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignableUser"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listTaskProgress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID */
+                taskId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Eskiden yeniye */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProgressEntry"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateTaskProgress: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description UUID */
+                taskId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskProgressUpdate"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Task"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    watchTask: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description UUID */
+                taskId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Takip ediliyor */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    unwatchTask: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description UUID */
+                taskId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Takip bırakıldı */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listTaskWatchers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID */
+                taskId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserRef"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listTaskAttachments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID */
+                taskId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Attachment"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    uploadTaskAttachment: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description UUID */
+                taskId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Yüklendi */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Attachment"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    downloadAttachment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID */
+                attachmentId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Dosya içeriği */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteAttachment: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description UUID */
+                attachmentId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Silindi */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listUnits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Unit"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createUnit: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnitCreate"];
+            };
+        };
+        responses: {
+            /** @description Oluşturuldu */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Unit"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    updateUnit: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description UUID */
+                unitId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnitUpdate"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Unit"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listReportSchedules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportSchedule"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createReportSchedule: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportScheduleCreate"];
+            };
+        };
+        responses: {
+            /** @description Oluşturuldu */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportSchedule"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteReportSchedule: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description UUID */
+                scheduleId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Silindi */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateReportSchedule: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description UUID */
+                scheduleId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportScheduleUpdate"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportSchedule"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    runReportSchedule: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description UUID */
+                scheduleId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rapor e-postası kuyruğa alındı */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getProjectOrganization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOrganization"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    addProjectStakeholder: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectStakeholderCreate"];
+            };
+        };
+        responses: {
+            /** @description Eklendi */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectStakeholder"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    removeProjectStakeholder: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                /** @description UUID */
+                stakeholderId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Kaldırıldı */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listCertifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Certification"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    addCertification: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CertificationCreate"];
+            };
+        };
+        responses: {
+            /** @description Eklendi */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Certification"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteCertification: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description UUID */
+                certificationId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Silindi */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listEventPhotos: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventPhoto"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    uploadEventPhoto: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                    caption?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Yüklendi */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventPhoto"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getEventPhoto: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description UUID */
+                photoId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Görsel */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/*": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteEventPhoto: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description UUID */
+                photoId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Silindi */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
 }

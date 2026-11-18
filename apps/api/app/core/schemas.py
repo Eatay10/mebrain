@@ -39,6 +39,8 @@ def to_user(u: User) -> c.User:
         role=u.role,
         team_id=u.team_id,
         team_name=u.team.name if u.team else None,
+        unit_id=u.team.unit_id if u.team else None,
+        unit_name=u.team.unit.name if u.team and u.team.unit else None,
         is_active=u.is_active,
         last_login_at=u.last_login_at,
     )
