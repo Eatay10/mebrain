@@ -24,9 +24,10 @@ export function cx(...parts: Array<string | false | null | undefined>): string {
 }
 
 // ---------------------------------------------------------------- Button
-type Variant = "primary" | "secondary" | "ghost" | "danger";
+type Variant = "primary" | "accent" | "secondary" | "ghost" | "danger";
 const variants: Record<Variant, string> = {
   primary: "bg-primary text-on-primary hover:bg-primary-hover",
+  accent: "bg-accent text-on-accent font-semibold hover:bg-accent-hover",
   secondary: "bg-surface text-text border border-border hover:bg-surface-2",
   ghost: "text-muted hover:text-text hover:bg-surface-2",
   danger: "bg-danger text-on-primary hover:opacity-90",
@@ -210,13 +211,13 @@ export function PriorityBadge({ priority }: { priority: Schemas["TaskPriority"] 
   return <span className={cx("text-xs", priorityStyle[priority])}>{priorityLabel[priority]}</span>;
 }
 
-export function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" }) {
+export function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" | "lg" }) {
   return (
     <span
       aria-hidden
       className={cx(
         "inline-flex shrink-0 items-center justify-center rounded-full bg-primary-soft font-semibold text-primary",
-        size === "sm" ? "size-6 text-[10px]" : "size-8 text-xs",
+        size === "sm" ? "size-6 text-[10px]" : size === "lg" ? "size-10 text-sm" : "size-8 text-xs",
       )}
     >
       {initials(name)}
@@ -224,13 +225,16 @@ export function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md"
   );
 }
 
+/** Grafik açıklamaları: renk kutusu seri renginde, metin okunur kalsın diye nötr. */
+export const legendText = (value: string) => <span style={{ color: "var(--text-muted)" }}>{value}</span>;
+
 export function ProgressBar({ counts }: { counts: Schemas["StatusCounts"] }) {
   const total = counts.total || 1;
   const parts: Array<[number, string, string]> = [
-    [counts.done, "bg-done", "Tamamlandı"],
-    [counts.inProgress, "bg-progress", "Devam ediyor"],
-    [counts.blocked, "bg-blocked", "Bloklu"],
-    [counts.todo, "bg-todo/40", "Başlanmadı"],
+    [counts.done, "bg-chart-done", "Tamamlandı"],
+    [counts.inProgress, "bg-chart-progress", "Devam ediyor"],
+    [counts.blocked, "bg-chart-blocked", "Bloklu"],
+    [counts.todo, "bg-chart-todo", "Başlanmadı"],
   ];
   return (
     <div

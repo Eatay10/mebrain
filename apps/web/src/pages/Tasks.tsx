@@ -34,10 +34,13 @@ export function TasksPage({ projectId, embedded }: { projectId?: string; embedde
   const [q, setQ] = useState(params.get("q") ?? "");
   const [creating, setCreating] = useState(false);
 
-  const set = (key: string, value?: string | null) => {
-    const next = new URLSearchParams(params);
+  // Her zaman GÜNCEL URL'den türet: gecikmeli arama (q) eski render'ın kapanışıyla çalışır; `params`
+  // kullanılırsa arada açılan task detayını (open) siler.
+  const set = (key: string, value?: string | null, also: string[] = []) => {
+    const next = new URLSearchParams(window.location.search);
     if (value) next.set(key, value);
     else next.delete(key);
+    for (const k of also) next.delete(k);
     if (key !== "page" && key !== "open") next.delete("page");
     setParams(next, { replace: key === "q" });
   };
@@ -61,6 +64,9 @@ export function TasksPage({ projectId, embedded }: { projectId?: string; embedde
       overdue: params.get("overdue") === "true" ? true : undefined,
       recurring: params.get("recurring") === "true" ? true : undefined,
       watching: params.get("watching") === "true" ? true : undefined,
+      hasBackup: params.get("hasBackup") === "false" ? false : undefined,
+      dueFrom: params.get("dueFrom") || undefined,
+      dueTo: params.get("dueTo") || undefined,
       sort: (params.get("sort") as Sort) || "-updatedAt",
       page,
       pageSize: 20,
@@ -119,6 +125,12 @@ export function TasksPage({ projectId, embedded }: { projectId?: string; embedde
           <Chip active={params.get("watching") === "true"} onClick={() => set("watching", params.get("watching") ? null : "true")}>
             <Star className="size-3" aria-hidden />Yıldızlılar
           </Chip>
+          <Chip active={params.get("hasBackup") === "false"} onClick={() => set("hasBackup", params.get("hasBackup") ? null : "false")}>Yedeksiz</Chip>
+          {(params.get("dueFrom") || params.get("dueTo")) && (
+            <Chip active onClick={() => set("dueFrom", null, ["dueTo"])}>
+              Son tarih: {params.get("dueFrom") === params.get("dueTo") ? params.get("dueTo") : `${params.get("dueFrom") ?? "…"} – ${params.get("dueTo") ?? "…"}`} ✕
+            </Chip>
+          )}
           <Chip active={params.get("overdue") === "true"} onClick={() => set("overdue", params.get("overdue") ? null : "true")}>Gecikmiş</Chip>
           <Chip active={params.get("recurring") === "true"} onClick={() => set("recurring", params.get("recurring") ? null : "true")}>
             <Repeat className="size-3" />Rutin şablonlar

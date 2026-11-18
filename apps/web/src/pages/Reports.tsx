@@ -28,6 +28,7 @@ import {
   ProgressBar,
   Select,
   Skeleton,
+  legendText,
   useToast,
 } from "../components/ui";
 import { groupByLabel, priorityLabel, reportFrequencyLabel, statusLabel, typeLabel, categoryLabel } from "../i18n/tr";
@@ -128,12 +129,13 @@ export function ReportsPage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="name" tick={{ fill: "var(--text-muted)", fontSize: 11 }} interval={0} angle={chart.length > 6 ? -25 : 0} textAnchor={chart.length > 6 ? "end" : "middle"} height={chart.length > 6 ? 70 : 30} />
                   <YAxis tick={{ fill: "var(--text-muted)", fontSize: 12 }} allowDecimals={false} />
-                  <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)" }} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="Başlanmadı" stackId="a" fill="var(--todo)" />
-                  <Bar dataKey="Devam ediyor" stackId="a" fill="var(--progress)" />
-                  <Bar dataKey="Bloklu" stackId="a" fill="var(--blocked)" />
-                  <Bar dataKey="Tamamlandı" stackId="a" fill="var(--done)" />
+                  <Tooltip cursor={{ fill: "var(--surface-2)" }} contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)" }}
+                          itemStyle={{ color: "var(--text)" }} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} formatter={legendText} />
+                  <Bar dataKey="Başlanmadı" stackId="a" fill="var(--chart-todo)" />
+                  <Bar dataKey="Devam ediyor" stackId="a" fill="var(--chart-progress)" />
+                  <Bar dataKey="Bloklu" stackId="a" fill="var(--chart-blocked)" />
+                  <Bar dataKey="Tamamlandı" stackId="a" fill="var(--chart-done)" />
                 </BarChart>
               </ResponsiveContainer>
             </div>

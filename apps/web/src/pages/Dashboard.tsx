@@ -1,24 +1,39 @@
-import { AlarmClock, ArrowRight, Star, TrendingUp } from "lucide-react";
-import { useState } from "react";
-import { Link } from "react-router";
+import { ArrowRight, CalendarDays, CheckCircle2, Clock, ListChecks, Plus, ShieldCheck, Star, Users } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { useAnnouncements, useDashboard, useTeams, type Schemas } from "../api/hooks";
+import {
+  errorMessage,
+  useAnnouncements,
+  useDashboard,
+  useEvents,
+  useParticipations,
+  useTasks,
+  useTeams,
+  useTransitionTask,
+  type Schemas,
+} from "../api/hooks";
 import { useAuth } from "../auth";
 import {
+  Avatar,
+  Button,
   Card,
   CardHeader,
+  cx,
   EmptyState,
   ErrorState,
-  PageHeader,
   ProgressBar,
   Select,
   Skeleton,
-  Stat,
   StatusBadge,
   Tabs,
+  legendText,
+  useToast,
 } from "../components/ui";
-import { fmtDate, fmtRelative, pct } from "../lib/format";
 import { TeamOptions } from "../components/TeamOptions";
+import { priorityLabel } from "../i18n/tr";
+import { fmtDate, fmtRelative, isoDate, pct } from "../lib/format";
+import { TaskFormModal } from "./TaskForm";
 
 type Part = "all" | "standard" | "project";
 const PART_LABEL: Record<Part, string> = { all: "Tümü", standard: "Standart task'lar", project: "Proje task'ları" };
@@ -50,14 +65,417 @@ function taskLink(teamId: string | undefined, part: Part, col: (typeof COLS)[num
   return `/tasks?${q.toString()}`;
 }
 
+const STATUS_TITLE: Record<Exclude<Kind, "NONE">, string> = {
+  MEMBER: "Çalışan durumu",
+  TEAM_MANAGER: "Ekip durumu",
+  UNIT: "Unit durumu",
+};
+const PRIORITY_TONE: Record<Schemas["TaskPriority"], string> = {
+  CRITICAL: "bg-danger-soft text-danger",
+  HIGH: "bg-danger-soft text-danger",
+  MEDIUM: "bg-accent-soft text-blocked",
+  LOW: "bg-success-soft text-done",
+};
+const OPEN: Schemas["TaskStatus"][] = ["TODO", "IN_PROGRESS", "BLOCKED"];
+
+function endOfWeek(d: Date): Date {
+  const e = new Date(d);
+  e.setDate(d.getDate() + ((7 - d.getDay()) % 7)); // Pazar
+  return e;
+}
+
+function dueText(due?: string | null): { text: string; late: boolean } {
+  if (!due) return { text: "Tarih yok", late: false };
+  const today = isoDate(new Date());
+  const tomorrow = isoDate(new Date(Date.now() + 864e5));
+  if (due < today) return { text: "Gecikti", late: true };
+  if (due === today) return { text: "Bugün", late: false };
+  if (due === tomorrow) return { text: "Yarın", late: false };
+  return { text: new Date(due).toLocaleDateString("tr-TR", { day: "numeric", month: "short", weekday: "short" }), late: false };
+}
+
 export function DashboardPage() {
-  const { user, session } = useAuth();
+  const { user, session, can } = useAuth();
+  const [creating, setCreating] = useState(false);
+  const dash = useDashboard({});
+  const d = dash.data;
+  const kind = d?.breakdown.kind;
+  const canCreate = !can.readOnly && (can.manage || !!session.user.teamId);
+  const managing = !!d && d.missingBackup > 0;
+  const today = new Date();
+
+  return (
+    <>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight text-text sm:text-4xl">Merhaba {user.fullName.split(" ")[0]},</h1>
+          <p className="mt-1 text-muted">Bugünün öncelikleri, tek ekranda.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-surface px-4 text-sm text-text shadow-card">
+            <CalendarDays className="size-4 text-muted" aria-hidden />
+            {today.toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" })}
+          </span>
+          {canCreate && (
+            <Button variant="accent" className="h-11 px-5" onClick={() => setCreating(true)}>
+              <Plus className="size-4" /> Yeni görev
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <section className="relative mb-6 overflow-hidden rounded-2xl bg-sidebar px-6 py-7 text-white sm:px-8" aria-label="Karşılama">
+        <div className="relative z-10 max-w-xl">
+          <p className="text-2xl font-semibold tracking-tight sm:text-3xl">Birlikte daha planlı, her zaman hazır.</p>
+          <p className="mt-1 text-white/80">Görevlerini takip et, ekibinle ilerle.</p>
+        </div>
+        <span className="absolute -right-6 -bottom-40 size-72 rounded-full bg-accent/45" aria-hidden />
+        <span className="absolute -top-24 -right-20 size-72 rounded-full bg-accent" aria-hidden />
+      </section>
+
+      {dash.error ? (
+        <Card>
+          <ErrorState message="Genel bakış verisi alınamadı." onRetry={() => void dash.refetch()} />
+        </Card>
+      ) : (
+        <div className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-3">
+            <StatCard
+              icon={<ListChecks className="size-7" />}
+              iconClass="bg-info-soft text-primary"
+              label="Bugünkü görevler"
+              value={d?.today.total}
+              hint={can.manage || can.observe ? "Kapsamınızda bugün son tarihli" : "Size atanan, bugün son tarihli"}
+              to={`/tasks?${can.manage || can.observe ? "" : "assigneeId=me&"}dueFrom=${isoDate(today)}&dueTo=${isoDate(today)}`}
+            />
+            <StatCard
+              icon={<CheckCircle2 className="size-7" />}
+              iconClass="bg-success-soft text-done"
+              label="Tamamlanan"
+              value={d?.today.done}
+              bar={d ? { value: d.today.done, max: d.today.total, className: "bg-done" } : undefined}
+              hint="Bugün son tarihli görevlerden"
+            />
+            <StatCard
+              icon={<Clock className="size-7" />}
+              iconClass="bg-accent-soft text-blocked"
+              label="Onay bekleyen"
+              value={d?.approvals.pending}
+              bar={d ? { value: d.approvals.pending, max: d.approvals.pending + d.approvals.decided, className: "bg-accent" } : undefined}
+              hint={can.manage ? "Karar bekleyen katılım talepleri" : "Bekleyen katılım talepleriniz"}
+              to="/events"
+            />
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-5">
+            <PriorityTasks className="xl:col-span-3" assigneeOnly={!can.manage && !can.observe} />
+            <div className="flex flex-col gap-6 xl:col-span-2">
+              {managing && <BackupCallout count={d.missingBackup} />}
+              <UpcomingEvent />
+            </div>
+          </div>
+
+          {d && kind && kind !== "NONE" && (
+            <>
+              <TeamStatus kind={kind} rows={d.breakdown.rows} avgProgress={d.avgProgress ?? 0} />
+              <DetailedBreakdown />
+            </>
+          )}
+
+          <div className="grid gap-6 xl:grid-cols-3">
+            <WatchingCard items={d?.watching} />
+            <AnnouncementsCard />
+          </div>
+          <ProjectsCard projects={d?.projects} />
+        </div>
+      )}
+      <TaskFormModal open={creating} onClose={() => setCreating(false)} />
+      <span className="sr-only" aria-live="polite">{dash.isFetching ? "Güncelleniyor" : ""}</span>
+    </>
+  );
+}
+
+function StatCard({
+  icon,
+  iconClass,
+  label,
+  value,
+  bar,
+  hint,
+  to,
+}: {
+  icon: React.ReactNode;
+  iconClass: string;
+  label: string;
+  value?: number;
+  bar?: { value: number; max: number; className: string };
+  hint?: string;
+  to?: string;
+}) {
+  const body = (
+    <div className="flex h-full items-center gap-5 rounded-2xl border border-border bg-surface p-5 shadow-card transition-colors hover:border-primary/30">
+      <span className={cx("grid size-20 shrink-0 place-items-center rounded-2xl", iconClass)} aria-hidden>
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[15px] font-medium text-text">{label}</p>
+        {value === undefined ? (
+          <Skeleton className="mt-2 h-10 w-24" />
+        ) : (
+          <div className="mt-1 flex items-center gap-4">
+            <span className="tabular text-4xl font-semibold text-text">{value}</span>
+            {bar && (
+              <span
+                className="h-2.5 flex-1 overflow-hidden rounded-full bg-surface-2"
+                role="progressbar"
+                aria-label={label}
+                aria-valuenow={bar.value}
+                aria-valuemin={0}
+                aria-valuemax={bar.max}
+              >
+                <span className={cx("block h-full rounded-full", bar.className)} style={{ width: `${pct(bar.value, bar.max)}%` }} />
+              </span>
+            )}
+          </div>
+        )}
+        {hint && <p className="mt-1 truncate text-xs text-muted">{hint}</p>}
+      </div>
+    </div>
+  );
+  return to ? (
+    <Link to={to} className="block rounded-2xl">
+      {body}
+    </Link>
+  ) : (
+    body
+  );
+}
+
+function PriorityTasks({ className, assigneeOnly }: { className?: string; assigneeOnly: boolean }) {
+  const [range, setRange] = useState<"today" | "week">("today");
+  const navigate = useNavigate();
+  const toast = useToast();
+  const transition = useTransitionTask();
+  const now = new Date();
+  const dueTo = isoDate(range === "today" ? now : endOfWeek(now));
+  const tasks = useTasks({
+    status: OPEN,
+    dueTo,
+    sort: "-priority",
+    pageSize: 5,
+    ...(assigneeOnly ? { assigneeId: "me" } : {}),
+  });
+  const items = tasks.data?.items ?? [];
+  return (
+    <Card className={cx("rounded-2xl", className)}>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-3">
+        <h2 className="text-xl font-semibold text-text">Öncelikli görevler</h2>
+        <div className="flex rounded-full bg-surface-2 p-1 text-sm" role="tablist" aria-label="Zaman aralığı">
+          {(
+            [
+              ["today", "Bugün"],
+              ["week", "Bu hafta"],
+            ] as const
+          ).map(([k, l]) => (
+            <button
+              key={k}
+              role="tab"
+              aria-selected={range === k}
+              onClick={() => setRange(k)}
+              className={cx("rounded-full px-4 py-1.5", range === k ? "bg-accent font-semibold text-on-accent" : "text-muted hover:text-text")}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+      {tasks.isPending ? (
+        <Skeleton className="mx-5 mb-5 h-48" />
+      ) : tasks.error ? (
+        <ErrorState message={errorMessage(tasks.error)} onRetry={() => void tasks.refetch()} />
+      ) : items.length === 0 ? (
+        <EmptyState title={range === "today" ? "Bugün için açık görev yok" : "Bu hafta için açık görev yok"} />
+      ) : (
+        <ul className="mx-5 divide-y divide-border border-y border-border">
+          {items.map((t) => {
+            const due = dueText(t.dueDate);
+            const canFinish = t.status === "IN_PROGRESS";
+            return (
+              <li key={t.id} className="flex items-center gap-4 py-3">
+                <button
+                  role="checkbox"
+                  aria-checked={false}
+                  aria-label={canFinish ? `${t.title} görevini tamamla` : `${t.title} görevini aç`}
+                  title={canFinish ? "Tamamlandı olarak işaretle" : "Tamamlamak için önce başlatın"}
+                  disabled={transition.isPending}
+                  onClick={() =>
+                    canFinish
+                      ? transition.mutate(
+                          { id: t.id, to: "DONE", version: t.version },
+                          { onSuccess: () => toast("success", "Görev tamamlandı."), onError: (e) => toast("error", errorMessage(e)) },
+                        )
+                      : navigate(`/tasks?open=${t.id}`)
+                  }
+                  className="size-6 shrink-0 rounded-md border-2 border-border hover:border-primary"
+                />
+                <Link to={`/tasks?open=${t.id}`} className="min-w-0 flex-1">
+                  <p className="truncate font-semibold text-text">{t.title}</p>
+                  <p className="truncate text-sm text-muted">
+                    {t.teamName} · {t.backupAssignee ? `Yedek: ${t.backupAssignee.fullName}` : "Yedek yok"}
+                  </p>
+                </Link>
+                <span className={cx("hidden rounded-full px-3 py-1 text-sm font-medium sm:inline", PRIORITY_TONE[t.priority])}>
+                  {priorityLabel[t.priority]}
+                </span>
+                <span className={cx("hidden w-24 items-center gap-1.5 border-l border-border pl-4 text-sm md:flex", due.late ? "text-danger" : "text-text")}>
+                  <Clock className="size-4" aria-hidden />
+                  {due.text}
+                </span>
+                {t.assignee && <span title={t.assignee.fullName}><Avatar name={t.assignee.fullName} size="lg" /></span>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <Link to={assigneeOnly ? "/tasks?assigneeId=me" : "/tasks"} className="inline-flex items-center gap-1.5 px-5 py-4 text-sm font-medium text-primary hover:underline">
+        Tüm görevleri gör <ArrowRight className="size-4" />
+      </Link>
+    </Card>
+  );
+}
+
+function BackupCallout({ count }: { count: number }) {
+  return (
+    <section className="flex gap-4 rounded-2xl border border-accent/40 bg-accent-soft p-6" aria-label="Yedek sorumlu eksikleri">
+      <ShieldCheck className="size-11 shrink-0 fill-accent stroke-primary" strokeWidth={1.8} aria-hidden />
+      <div>
+        <h2 className="text-xl font-semibold text-text">Yedekleri tamamla</h2>
+        <p className="mt-1 text-sm text-muted">{count} görev için yedek sorumlu bekleniyor.</p>
+        <Link
+          to="/tasks?hasBackup=false&status=TODO,IN_PROGRESS,BLOCKED"
+          className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-on-primary hover:bg-primary-hover"
+        >
+          Sorumlu ata <ArrowRight className="size-4" />
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+function UpcomingEvent() {
+  const events = useEvents({ from: isoDate(new Date()) });
+  const next = useMemo(() => {
+    const now = Date.now();
+    return (events.data?.items ?? [])
+      .filter((e) => new Date(e.startsAt).getTime() >= now)
+      .sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0];
+  }, [events.data]);
+  const people = useParticipations(next?.id);
+  const active = (people.data ?? []).filter((p) => ["REQUESTED", "APPROVED", "ATTENDED"].includes(p.status));
+  const start = next ? new Date(next.startsAt) : null;
+  const end = next ? new Date(next.endsAt) : null;
+  const time = (x: Date) => x.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+  return (
+    <Card className="flex-1 rounded-2xl">
+      <div className="flex items-center justify-between px-5 pt-5 pb-3">
+        <h2 className="text-xl font-semibold text-text">Yaklaşan etkinlik</h2>
+        <Link to="/events" className="text-sm text-primary hover:underline">Tümü</Link>
+      </div>
+      {events.isPending ? (
+        <Skeleton className="mx-5 mb-5 h-20" />
+      ) : !next || !start || !end ? (
+        <EmptyState title="Yaklaşan etkinlik yok" />
+      ) : (
+        <Link to="/events" className="mx-5 mb-5 flex items-center gap-4 rounded-xl hover:bg-surface-2">
+          <span className="grid size-20 shrink-0 place-content-center rounded-xl bg-info-soft text-center text-primary">
+            <span className="text-3xl leading-none font-semibold">{start.getDate()}</span>
+            <span className="text-sm font-medium uppercase">{start.toLocaleDateString("tr-TR", { month: "short" })}</span>
+          </span>
+          <span className="min-w-0 flex-1 border-l border-border pl-4">
+            <span className="block truncate font-semibold text-text">{next.title}</span>
+            <span className="mt-1 flex items-center gap-1.5 text-sm text-muted">
+              <Clock className="size-4" aria-hidden />
+              {start.toDateString() === end.toDateString() ? `${time(start)} – ${time(end)}` : `${fmtDate(next.startsAt)} – ${fmtDate(next.endsAt)}`}
+            </span>
+          </span>
+          <span className="hidden shrink-0 flex-col items-end gap-1 sm:flex">
+            <span className="flex -space-x-2">
+              {active.slice(0, 3).map((p) => (
+                <span key={p.id} className="rounded-full ring-2 ring-surface" title={p.user.fullName}>
+                  <Avatar name={p.user.fullName} />
+                </span>
+              ))}
+              {active.length > 3 && (
+                <span className="grid size-8 place-items-center rounded-full bg-surface-2 text-xs font-semibold text-text ring-2 ring-surface">
+                  +{active.length - 3}
+                </span>
+              )}
+            </span>
+            <span className="text-xs text-muted">{next.participantCount ?? active.length} katılımcı</span>
+          </span>
+        </Link>
+      )}
+    </Card>
+  );
+}
+
+function TeamStatus({ kind, rows, avgProgress }: { kind: Exclude<Kind, "NONE">; rows: Schemas["DashboardBreakdownRow"][]; avgProgress: number }) {
+  const shown = kind === "MEMBER" ? [...rows].sort((a, b) => b.all.total - a.all.total).slice(0, 8) : rows;
+  return (
+    <Card className="rounded-2xl">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-5 pb-2">
+        <h2 className="text-xl font-semibold text-text">{STATUS_TITLE[kind]}</h2>
+        <span className="text-sm text-muted">
+          Ort. ilerleme <span className="font-semibold text-primary">%{avgProgress}</span>
+          {kind === "MEMBER" && rows.length > shown.length && (
+            <a href="#ayrintili-durum" className="ml-3 text-primary hover:underline">Tümü ({rows.length})</a>
+          )}
+        </span>
+      </div>
+      {shown.length === 0 ? (
+        <EmptyState title={KIND_TEXT[kind].empty} />
+      ) : (
+        <ul className="grid gap-x-6 gap-y-5 px-5 pt-2 pb-5 sm:grid-cols-2 xl:grid-cols-4">
+          {shown.map((r) => {
+            const done = pct(r.all.done, r.all.total);
+            return (
+              <li key={r.id} className="flex items-center gap-4">
+                <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-info-soft text-primary" aria-hidden>
+                  <Users className="size-5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold text-text" title={r.sublabel ?? undefined}>{r.label}</p>
+                  {r.sublabel && <p className="truncate text-xs text-muted">{r.sublabel}</p>}
+                  <div className="mt-1.5 flex items-center gap-3">
+                    <span
+                      className="h-2 flex-1 overflow-hidden rounded-full bg-surface-2"
+                      role="progressbar"
+                      aria-label={`${r.label} tamamlanma`}
+                      aria-valuenow={done}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                    >
+                      <span className="block h-full rounded-full bg-primary" style={{ width: `${done}%` }} />
+                    </span>
+                    <span className="tabular w-10 text-right text-sm text-text">%{done}</span>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+/** Rol bazlı ayrıntılı kırılım: grafik + tablo (yönetici, unit yöneticisi, direktör/denetmen). */
+function DetailedBreakdown() {
   const [part, setPart] = useState<Part>("all");
   const [teamId, setTeamId] = useState<string>("");
   const teams = useTeams();
   const dash = useDashboard(teamId ? { teamId } : {});
   const d = dash.data;
-  const totals = d?.totals[part];
   const kind: Kind | undefined = d?.breakdown.kind;
   const rows = d?.breakdown.rows ?? [];
   const text = kind && kind !== "NONE" ? KIND_TEXT[kind] : undefined;
@@ -70,78 +488,25 @@ export function DashboardPage() {
     Tamamlandı: r[part].done,
     Puan: r.score,
   }));
-
   return (
-    <>
-      <PageHeader
-        title={`Merhaba, ${user.fullName.split(" ")[0]}`}
-        subtitle={`${session.visibleTeamIds.length} ekip görünür${d ? ` · güncellendi ${fmtRelative(d.generatedAt)}` : ""}`}
-        actions={
-          <>
-            {(teams.data?.length ?? 0) > 1 && (
-              <Select aria-label="Ekip filtresi" value={teamId} onChange={(e) => setTeamId(e.target.value)} className="w-48">
-                <option value="">Tüm ekipler</option>
-                <TeamOptions teams={teams.data} />
-              </Select>
-            )}
-            <Tabs<Part>
-              value={part}
-              onChange={setPart}
-              items={(["all", "standard", "project"] as const).map((v) => ({ value: v, label: PART_LABEL[v] }))}
-            />
-          </>
-        }
-      />
-
-      {dash.error ? (
-        <Card>
-          <ErrorState message="Dashboard verisi alınamadı." onRetry={() => void dash.refetch()} />
-        </Card>
-      ) : (
-        <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-            {COLS.map((c) =>
-              totals ? (
-                <Link key={c.key} to={taskLink(teamId || undefined, part, c)} className="rounded-xl focus-visible:outline-2">
-                  <Stat label={c.label} value={totals[c.key]} tone={c.tone} hint={c.key === "overdue" ? "son tarihi geçmiş" : `%${pct(totals[c.key], totals.total)}`} />
-                </Link>
-              ) : (
-                <Skeleton key={c.key} className="h-[92px]" />
-              ),
-            )}
-            {totals ? <Stat label="Toplam" value={totals.total} hint={PART_LABEL[part]} /> : <Skeleton className="h-[92px]" />}
-          </div>
-
-          <div className="grid gap-6 xl:grid-cols-3">
-            <Card>
-              <CardHeader title="İlerleme" subtitle="Task'ların ortalama tamamlanma yüzdesi" />
-              {!d ? (
-                <Skeleton className="m-5 h-24" />
-              ) : (
-                <div className="space-y-4 px-5 py-4">
-                  {[
-                    ["Kapsamdaki tüm task'lar", d.avgProgress ?? 0],
-                    ["Dahil olduğum task'lar", d.mineAvgProgress ?? 0],
-                  ].map(([label, value]) => (
-                    <div key={String(label)}>
-                      <div className="mb-1 flex items-center justify-between text-sm">
-                        <span className="flex items-center gap-1.5 text-text"><TrendingUp className="size-4 text-muted" aria-hidden />{label}</span>
-                        <span className="tabular text-xl font-semibold text-primary">%{value}</span>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuenow={Number(value)} aria-valuemin={0} aria-valuemax={100} aria-label={String(label)}>
-                        <div className="h-full rounded-full bg-primary" style={{ width: `${value}%` }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-            <WatchingCard items={d?.watching} />
-          </div>
-
-          <div className="grid gap-6 xl:grid-cols-3">
-            {kind !== "NONE" && (
-              <Card className="xl:col-span-2">
+    <section id="ayrintili-durum" className="space-y-6 scroll-mt-6" aria-label="Ayrıntılı durum">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-xl font-semibold text-text">Ayrıntılı durum</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          {(teams.data?.length ?? 0) > 1 && (
+            <Select aria-label="Ekip filtresi" value={teamId} onChange={(e) => setTeamId(e.target.value)} className="w-56">
+              <option value="">Tüm ekipler</option>
+              <TeamOptions teams={teams.data} />
+            </Select>
+          )}
+          <Tabs<Part>
+            value={part}
+            onChange={setPart}
+            items={(["all", "standard", "project"] as const).map((v) => ({ value: v, label: PART_LABEL[v] }))}
+          />
+        </div>
+      </div>
+<Card>
                 <CardHeader
                   title={text?.chart ?? "Durum"}
                   subtitle={kind === "TEAM_MANAGER" ? SCORE_HINT : PART_LABEL[part]}
@@ -175,20 +540,21 @@ export function DashboardPage() {
                         <Tooltip
                           cursor={{ fill: "var(--surface-2)" }}
                           contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)" }}
+                          itemStyle={{ color: "var(--text)" }}
                         />
                         {/* Recharts alt bileşenleri Fragment içinde görmez; dizi olarak verilmeli. */}
                         {kind === "TEAM_MANAGER"
                           ? [<Bar key="score" dataKey="Puan" fill="var(--primary)" radius={[4, 4, 0, 0]} />]
                           : [
-                              <Legend key="legend" wrapperStyle={{ fontSize: 12 }} />,
-                              <Bar key="todo" dataKey="Başlanmadı" stackId="a" fill="var(--todo)" />,
-                              <Bar key="prog" dataKey="Devam ediyor" stackId="a" fill="var(--progress)" />,
-                              <Bar key="blk" dataKey="Bloklu" stackId="a" fill="var(--blocked)" />,
+                              <Legend key="legend" wrapperStyle={{ fontSize: 12 }} formatter={legendText} />,
+                              <Bar key="todo" dataKey="Başlanmadı" stackId="a" fill="var(--chart-todo)" />,
+                              <Bar key="prog" dataKey="Devam ediyor" stackId="a" fill="var(--chart-progress)" />,
+                              <Bar key="blk" dataKey="Bloklu" stackId="a" fill="var(--chart-blocked)" />,
                               <Bar
                                 key="done"
                                 dataKey="Tamamlandı"
                                 stackId="a"
-                                fill="var(--done)"
+                                fill="var(--chart-done)"
                                 radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
                               />,
                             ]}
@@ -197,36 +563,7 @@ export function DashboardPage() {
                   )}
                 </div>
               </Card>
-            )}
-
-            <Card>
-              <CardHeader title="Bana atananlar" subtitle="Tüm türler" />
-              {!d ? (
-                <Skeleton className="m-5 h-40" />
-              ) : (
-                <div className="space-y-3 px-5 py-4">
-                  {COLS.map((c) => (
-                    <Link
-                      key={c.key}
-                      to={`/tasks?assigneeId=me&${c.status ? `status=${c.status}` : "overdue=true"}`}
-                      className="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-surface-2"
-                    >
-                      <span className="text-sm text-text">{c.label}</span>
-                      <span className={`tabular text-lg font-semibold ${c.tone}`}>{d.mine[c.key]}</span>
-                    </Link>
-                  ))}
-                  {d.mine.overdue > 0 && (
-                    <p className="flex items-center gap-2 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">
-                      <AlarmClock className="size-4" /> {d.mine.overdue} task'ınızın son tarihi geçti.
-                    </p>
-                  )}
-                </div>
-              )}
-            </Card>
-          </div>
-
-          {kind !== "NONE" && (
-            <Card>
+<Card>
               <CardHeader
                 title={text?.table ?? "Tablo"}
                 subtitle={kind === "UNIT" ? "Unit bazında toplamlar" : "Sayıya tıklayarak filtrelenmiş task listesini açın"}
@@ -296,16 +633,7 @@ export function DashboardPage() {
                 </table>
               </div>
             </Card>
-          )}
-
-          <div className="grid gap-6 xl:grid-cols-2">
-            <ProjectsCard projects={d?.projects} />
-            <AnnouncementsCard />
-          </div>
-        </div>
-      )}
-      <span className="sr-only" aria-live="polite">{dash.isFetching ? "Güncelleniyor" : ""}</span>
-    </>
+    </section>
   );
 }
 

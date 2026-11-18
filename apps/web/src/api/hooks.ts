@@ -254,7 +254,7 @@ export function useUpdateProject(id: string) {
 }
 
 // ---------------------------------------------------------------- events
-export function useEvents(q: { scope?: Schemas["EventScope"]; participantId?: string; q?: string; page?: number }) {
+export function useEvents(q: { scope?: Schemas["EventScope"]; participantId?: string; q?: string; page?: number; from?: string }) {
   return useQuery({
     queryKey: ["events", q],
     queryFn: () => unwrap(api.GET("/events", { params: { query: { pageSize: 50, ...q } } })),
