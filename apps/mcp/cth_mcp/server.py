@@ -15,6 +15,7 @@ from typing import Annotated, Any, Literal
 
 import httpx
 from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
 API_BASE = os.environ.get("CTH_API_BASE_URL", "http://localhost:8000/api/v1").rstrip("/")
@@ -40,8 +41,8 @@ Status = Literal["TODO", "IN_PROGRESS", "BLOCKED", "DONE"]
 Priority = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 
 
-class ApiProblem(Exception):
-    pass
+class ApiProblem(ToolError):
+    """API hatası; ToolError olduğu için mesajı (RFC 9457 detail) modele iletilir."""
 
 
 def _token(ctx: Context | None) -> str:
