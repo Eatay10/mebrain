@@ -511,6 +511,64 @@ class TeamDashboard(BaseModel):
     ] = None
 
 
+class DashboardBreakdownKind(StrEnum):
+    NONE = "NONE"
+    MEMBER = "MEMBER"
+    TEAM_MANAGER = "TEAM_MANAGER"
+    UNIT = "UNIT"
+
+
+class DashboardBreakdownRow(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: Annotated[
+        str,
+        Field(
+            description='Satırın anahtarı (kullanıcı, ekip veya unit kimliği; unit\'siz ekipler için "none")'
+        ),
+    ]
+    label: str
+    sublabel: Annotated[
+        str | None,
+        Field(description="Ek bilgi (ör. ekip yöneticisi satırında ekip adı)"),
+    ] = None
+    team_id: Annotated[
+        UUID | None,
+        Field(
+            alias="teamId",
+            description="Satır tek bir ekibe aitse task listesine filtre için",
+        ),
+    ] = None
+    assignee_id: Annotated[
+        UUID | None,
+        Field(
+            alias="assigneeId",
+            description="Çalışan satırında task listesine filtre için",
+        ),
+    ] = None
+    all: StatusCounts
+    standard: StatusCounts
+    project: StatusCounts
+    avg_progress: Annotated[int, Field(alias="avgProgress", ge=0, le=100)]
+    score: Annotated[
+        int,
+        Field(
+            description="Performans puanı = round(0,5 × tamamlanma oranı + 0,5 × ortalama ilerleme − gecikmiş oranı),\n0–100 aralığına sıkıştırılır; task'ı olmayan satır için 0.\n",
+            ge=0,
+            le=100,
+        ),
+    ]
+
+
+class DashboardBreakdown(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    kind: DashboardBreakdownKind
+    rows: list[DashboardBreakdownRow]
+
+
 class Project2(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -1320,6 +1378,7 @@ class DashboardSummary(BaseModel):
     )
     generated_at: Annotated[AwareDatetime, Field(alias="generatedAt")]
     totals: TeamDashboardTotals
+    breakdown: DashboardBreakdown
     teams: list[TeamDashboard]
     mine: StatusCounts
     projects: Annotated[

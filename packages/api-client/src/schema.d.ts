@@ -1413,10 +1413,42 @@ export interface components {
             /** @description Açık+kapalı task'ların ortalama ilerlemesi (%) */
             avgProgress?: number;
         };
+        /**
+         * @description Dashboard kırılımı rolüne göre seçilir: EMPLOYEE → NONE, MANAGER → MEMBER (yönettiği ekiplerin
+         *     çalışanları), UNIT_MANAGER → TEAM_MANAGER (unit'indeki her ekip, ekip yöneticisiyle),
+         *     DIRECTOR/AUDITOR → UNIT.
+         * @enum {string}
+         */
+        DashboardBreakdownKind: "NONE" | "MEMBER" | "TEAM_MANAGER" | "UNIT";
+        DashboardBreakdownRow: {
+            /** @description Satırın anahtarı (kullanıcı, ekip veya unit kimliği; unit'siz ekipler için "none") */
+            id: string;
+            label: string;
+            /** @description Ek bilgi (ör. ekip yöneticisi satırında ekip adı) */
+            sublabel?: string | null;
+            /** @description Satır tek bir ekibe aitse task listesine filtre için */
+            teamId?: components["schemas"]["Id"] | null;
+            /** @description Çalışan satırında task listesine filtre için */
+            assigneeId?: components["schemas"]["Id"] | null;
+            all: components["schemas"]["StatusCounts"];
+            standard: components["schemas"]["StatusCounts"];
+            project: components["schemas"]["StatusCounts"];
+            avgProgress: number;
+            /**
+             * @description Performans puanı = round(0,5 × tamamlanma oranı + 0,5 × ortalama ilerleme − gecikmiş oranı),
+             *     0–100 aralığına sıkıştırılır; task'ı olmayan satır için 0.
+             */
+            score: number;
+        };
+        DashboardBreakdown: {
+            kind: components["schemas"]["DashboardBreakdownKind"];
+            rows: components["schemas"]["DashboardBreakdownRow"][];
+        };
         DashboardSummary: {
             /** Format: date-time */
             generatedAt: string;
             totals: components["schemas"]["TeamDashboardTotals"];
+            breakdown: components["schemas"]["DashboardBreakdown"];
             teams: components["schemas"]["TeamDashboard"][];
             mine: components["schemas"]["StatusCounts"];
             /** @description Kapsamdaki aktif projelerin ilerlemesi (en fazla 10, son tarihe göre) */

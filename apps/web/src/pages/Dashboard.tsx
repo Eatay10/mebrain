@@ -29,9 +29,19 @@ const COLS: Array<{ key: keyof Schemas["StatusCounts"]; label: string; status?: 
   { key: "overdue", label: "Gecikmiş", tone: "text-danger" },
 ];
 
-function taskLink(teamId: string | undefined, part: Part, col: (typeof COLS)[number]): string {
+type Kind = Schemas["DashboardBreakdownKind"];
+// Rol → kırılım başlıkları (API kırılımı role göre seçer; ekran sadece etiketler).
+const KIND_TEXT: Record<Exclude<Kind, "NONE">, { chart: string; table: string; col: string; empty: string }> = {
+  MEMBER: { chart: "Çalışanlara göre durum", table: "Çalışan tablosu", col: "Çalışan", empty: "Yönettiğiniz ekiplerde çalışan yok" },
+  TEAM_MANAGER: { chart: "Ekip yöneticilerinin puanları", table: "Ekip yöneticileri", col: "Ekip yöneticisi", empty: "Unit'inizde ekip yok" },
+  UNIT: { chart: "Unit'lere göre durum", table: "Unit tablosu", col: "Unit", empty: "Görüntülenecek unit yok" },
+};
+const SCORE_HINT = "Puan = 0,5 × tamamlanma oranı + 0,5 × ortalama ilerleme − gecikmiş oranı (0–100)";
+
+function taskLink(teamId: string | undefined, part: Part, col: (typeof COLS)[number], assigneeId?: string | null): string {
   const q = new URLSearchParams();
   if (teamId) q.set("teamId", teamId);
+  if (assigneeId) q.set("assigneeId", assigneeId);
   if (part !== "all") q.set("type", part === "standard" ? "STANDARD" : "PROJECT");
   if (col.status) q.set("status", col.status);
   else q.set("overdue", "true");
@@ -46,20 +56,23 @@ export function DashboardPage() {
   const dash = useDashboard(teamId ? { teamId } : {});
   const d = dash.data;
   const totals = d?.totals[part];
-  const chartData =
-    d?.teams.map((t) => ({
-      name: t.teamName,
-      Başlanmadı: t[part].todo,
-      "Devam ediyor": t[part].inProgress,
-      Bloklu: t[part].blocked,
-      Tamamlandı: t[part].done,
-    })) ?? [];
+  const kind: Kind | undefined = d?.breakdown.kind;
+  const rows = d?.breakdown.rows ?? [];
+  const text = kind && kind !== "NONE" ? KIND_TEXT[kind] : undefined;
+  const chartData = rows.map((r) => ({
+    name: r.label,
+    Başlanmadı: r[part].todo,
+    "Devam ediyor": r[part].inProgress,
+    Bloklu: r[part].blocked,
+    Tamamlandı: r[part].done,
+    Puan: r.score,
+  }));
 
   return (
     <>
       <PageHeader
         title={`Merhaba, ${user.fullName.split(" ")[0]}`}
-        subtitle={`Ekip bazlı task durumu · ${session.visibleTeamIds.length} ekip görünür${d ? ` · güncellendi ${fmtRelative(d.generatedAt)}` : ""}`}
+        subtitle={`${session.visibleTeamIds.length} ekip görünür${d ? ` · güncellendi ${fmtRelative(d.generatedAt)}` : ""}`}
         actions={
           <>
             {(teams.data?.length ?? 0) > 1 && (
@@ -128,33 +141,50 @@ export function DashboardPage() {
           </div>
 
           <div className="grid gap-6 xl:grid-cols-3">
-            <Card className="xl:col-span-2">
-              <CardHeader title="Ekiplere göre durum" subtitle={PART_LABEL[part]} />
-              <div className="h-72 px-2 py-4">
-                {!d ? (
-                  <Skeleton className="m-4 h-60" />
-                ) : chartData.length === 0 ? (
-                  <EmptyState title="Görüntülenecek ekip yok" />
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData} margin={{ left: 0, right: 16 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                      <XAxis dataKey="name" tick={{ fill: "var(--text-muted)", fontSize: 12 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fill: "var(--text-muted)", fontSize: 12 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                      <Tooltip
-                        cursor={{ fill: "var(--surface-2)" }}
-                        contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)" }}
-                      />
-                      <Legend wrapperStyle={{ fontSize: 12 }} />
-                      <Bar dataKey="Başlanmadı" stackId="a" fill="var(--todo)" />
-                      <Bar dataKey="Devam ediyor" stackId="a" fill="var(--progress)" />
-                      <Bar dataKey="Bloklu" stackId="a" fill="var(--blocked)" />
-                      <Bar dataKey="Tamamlandı" stackId="a" fill="var(--done)" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-            </Card>
+            {kind !== "NONE" && (
+              <Card className="xl:col-span-2">
+                <CardHeader
+                  title={text?.chart ?? "Durum"}
+                  subtitle={kind === "TEAM_MANAGER" ? SCORE_HINT : PART_LABEL[part]}
+                />
+                <div className="h-72 px-2 py-4">
+                  {!d ? (
+                    <Skeleton className="m-4 h-60" />
+                  ) : chartData.length === 0 ? (
+                    <EmptyState title={text?.empty ?? "Veri yok"} />
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={chartData} margin={{ left: 0, right: 16 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                        <XAxis dataKey="name" tick={{ fill: "var(--text-muted)", fontSize: 12 }} axisLine={false} tickLine={false} interval={0} />
+                        <YAxis
+                          tick={{ fill: "var(--text-muted)", fontSize: 12 }}
+                          axisLine={false}
+                          tickLine={false}
+                          allowDecimals={false}
+                          domain={kind === "TEAM_MANAGER" ? [0, 100] : undefined}
+                        />
+                        <Tooltip
+                          cursor={{ fill: "var(--surface-2)" }}
+                          contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)" }}
+                        />
+                        {kind === "TEAM_MANAGER" ? (
+                          <Bar dataKey="Puan" fill="var(--primary)" radius={[4, 4, 0, 0]} />
+                        ) : (
+                          <>
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            <Bar dataKey="Başlanmadı" stackId="a" fill="var(--todo)" />
+                            <Bar dataKey="Devam ediyor" stackId="a" fill="var(--progress)" />
+                            <Bar dataKey="Bloklu" stackId="a" fill="var(--blocked)" />
+                            <Bar dataKey="Tamamlandı" stackId="a" fill="var(--done)" radius={[4, 4, 0, 0]} />
+                          </>
+                        )}
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </Card>
+            )}
 
             <Card>
               <CardHeader title="Bana atananlar" subtitle="Tüm türler" />
@@ -182,52 +212,78 @@ export function DashboardPage() {
             </Card>
           </div>
 
-          <Card>
-            <CardHeader title="Ekip tablosu" subtitle="Sayıya tıklayarak filtrelenmiş task listesini açın" />
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-surface-2 text-left text-xs text-muted uppercase">
-                  <tr>
-                    <th scope="col" className="px-5 py-3 font-medium">Ekip</th>
-                    {COLS.map((c) => (
-                      <th key={c.key} scope="col" className="px-3 py-3 text-right font-medium">{c.label}</th>
-                    ))}
-                    <th scope="col" className="px-3 py-3 text-right font-medium">Toplam</th>
-                    <th scope="col" className="w-48 px-5 py-3 font-medium">Tamamlanan</th>
-                    <th scope="col" className="px-3 py-3 text-right font-medium">Ort. ilerleme</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {!d
-                    ? Array.from({ length: 3 }).map((_, i) => (
+          {kind !== "NONE" && (
+            <Card>
+              <CardHeader
+                title={text?.table ?? "Tablo"}
+                subtitle={kind === "UNIT" ? "Unit bazında toplamlar" : "Sayıya tıklayarak filtrelenmiş task listesini açın"}
+              />
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-surface-2 text-left text-xs text-muted uppercase">
+                    <tr>
+                      <th scope="col" className="px-5 py-3 font-medium">{text?.col ?? ""}</th>
+                      {COLS.map((c) => (
+                        <th key={c.key} scope="col" className="px-3 py-3 text-right font-medium">{c.label}</th>
+                      ))}
+                      <th scope="col" className="px-3 py-3 text-right font-medium">Toplam</th>
+                      <th scope="col" className="w-48 px-5 py-3 font-medium">Tamamlanan</th>
+                      <th scope="col" className="px-3 py-3 text-right font-medium">Ort. ilerleme</th>
+                      <th scope="col" className="px-3 py-3 text-right font-medium" title={SCORE_HINT}>Puan</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {!d ? (
+                      Array.from({ length: 3 }).map((_, i) => (
                         <tr key={i}>
-                          <td colSpan={9} className="px-5 py-3"><Skeleton className="h-5" /></td>
+                          <td colSpan={10} className="px-5 py-3"><Skeleton className="h-5" /></td>
                         </tr>
                       ))
-                    : d.teams.map((t) => (
-                        <tr key={t.teamId} className="border-t border-border">
-                          <th scope="row" className="px-5 py-3 text-left font-medium text-text">{t.teamName}</th>
-                          {COLS.map((c) => (
-                            <td key={c.key} className="px-3 py-3 text-right">
-                              <Link className={`tabular rounded px-1.5 py-0.5 hover:bg-surface-2 ${c.tone}`} to={taskLink(t.teamId, part, c)}>
-                                {t[part][c.key]}
-                              </Link>
+                    ) : rows.length === 0 ? (
+                      <tr>
+                        <td colSpan={10}><EmptyState title={text?.empty ?? "Veri yok"} /></td>
+                      </tr>
+                    ) : (
+                      rows.map((r) => {
+                        const linkable = kind !== "UNIT" && !!r.teamId;
+                        return (
+                          <tr key={r.id} className="border-t border-border">
+                            <th scope="row" className="px-5 py-3 text-left font-medium text-text">
+                              {r.label}
+                              {r.sublabel && <span className="block text-xs font-normal text-muted">{r.sublabel}</span>}
+                            </th>
+                            {COLS.map((c) => (
+                              <td key={c.key} className="px-3 py-3 text-right">
+                                {linkable ? (
+                                  <Link
+                                    className={`tabular rounded px-1.5 py-0.5 hover:bg-surface-2 ${c.tone}`}
+                                    to={taskLink(r.teamId ?? undefined, part, c, r.assigneeId)}
+                                  >
+                                    {r[part][c.key]}
+                                  </Link>
+                                ) : (
+                                  <span className={`tabular px-1.5 ${c.tone}`}>{r[part][c.key]}</span>
+                                )}
+                              </td>
+                            ))}
+                            <td className="tabular px-3 py-3 text-right font-medium">{r[part].total}</td>
+                            <td className="px-5 py-3">
+                              <div className="flex items-center gap-2">
+                                <ProgressBar counts={r[part]} />
+                                <span className="tabular w-10 text-right text-xs text-muted">%{pct(r[part].done, r[part].total)}</span>
+                              </div>
                             </td>
-                          ))}
-                          <td className="tabular px-3 py-3 text-right font-medium">{t[part].total}</td>
-                          <td className="px-5 py-3">
-                            <div className="flex items-center gap-2">
-                              <ProgressBar counts={t[part]} />
-                              <span className="tabular w-10 text-right text-xs text-muted">%{pct(t[part].done, t[part].total)}</span>
-                            </div>
-                          </td>
-                          <td className="tabular px-3 py-3 text-right font-medium text-primary">%{t.avgProgress ?? 0}</td>
-                        </tr>
-                      ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+                            <td className="tabular px-3 py-3 text-right text-muted">%{r.avgProgress}</td>
+                            <td className="tabular px-3 py-3 text-right text-base font-semibold text-primary">{r.score}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
 
           <div className="grid gap-6 xl:grid-cols-2">
             <ProjectsCard projects={d?.projects} />

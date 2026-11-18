@@ -3075,15 +3075,73 @@ components:
           minimum: 0
           maximum: 100
           description: Açık+kapalı task'ların ortalama ilerlemesi (%)
+    DashboardBreakdownKind:
+      type: string
+      description: |
+        Dashboard kırılımı rolüne göre seçilir: EMPLOYEE → NONE, MANAGER → MEMBER (yönettiği ekiplerin
+        çalışanları), UNIT_MANAGER → TEAM_MANAGER (unit'indeki her ekip, ekip yöneticisiyle),
+        DIRECTOR/AUDITOR → UNIT.
+      enum: [NONE, MEMBER, TEAM_MANAGER, UNIT]
+    DashboardBreakdownRow:
+      type: object
+      required: [id, label, all, standard, project, avgProgress, score]
+      properties:
+        id:
+          type: string
+          description: Satırın anahtarı (kullanıcı, ekip veya unit kimliği; unit'siz ekipler için "none")
+        label:
+          type: string
+        sublabel:
+          type: [string, 'null']
+          description: Ek bilgi (ör. ekip yöneticisi satırında ekip adı)
+        teamId:
+          description: Satır tek bir ekibe aitse task listesine filtre için
+          oneOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        assigneeId:
+          description: Çalışan satırında task listesine filtre için
+          oneOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        all:
+          $ref: '#/components/schemas/StatusCounts'
+        standard:
+          $ref: '#/components/schemas/StatusCounts'
+        project:
+          $ref: '#/components/schemas/StatusCounts'
+        avgProgress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: |
+            Performans puanı = round(0,5 × tamamlanma oranı + 0,5 × ortalama ilerleme − gecikmiş oranı),
+            0–100 aralığına sıkıştırılır; task'ı olmayan satır için 0.
+    DashboardBreakdown:
+      type: object
+      required: [kind, rows]
+      properties:
+        kind:
+          $ref: '#/components/schemas/DashboardBreakdownKind'
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardBreakdownRow'
     DashboardSummary:
       type: object
-      required: [generatedAt, totals, teams, mine, projects]
+      required: [generatedAt, totals, teams, breakdown, mine, projects]
       properties:
         generatedAt:
           type: string
           format: date-time
         totals:
           $ref: '#/components/schemas/TeamDashboardTotals'
+        breakdown:
+          $ref: '#/components/schemas/DashboardBreakdown'
         teams:
           type: array
           items:
