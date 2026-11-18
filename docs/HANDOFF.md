@@ -6,10 +6,11 @@ Yeni oturum önce bunu, sonra `CLAUDE.md` ve `AI-NATIVE.md`'yi okusun. Kökteki 
 
 | Dal | Checkout | Durum |
 |---|---|---|
-| `task/TASK-019-org-hierarchy` | `/Users/behlultunc/DEV/cyber-task-hub-019` (worktree) | **Aktif dal.** Çalışan stack buradan kurulu. GitHub'a push'lu, PR yok. |
+| `main` | `/Users/behlultunc/DEV/cyber-task-hub-019` (worktree) | **Güncel ana dal**: TASK-019 + TASK-001'in 3 commit'i birleştirildi, GitHub'a push'lu. Kullanıcının açık isteğiyle doğrudan push edildi (R-GIT-03 bu seferlik atlandı). Çalışan stack buradan kurulu. |
+| `task/TASK-019-org-hierarchy` | — | GitHub'da; `main`'e birleşti. |
 | `task/TASK-001-initial-app` | `/Users/behlultunc/DEV/cyber-task-hub` | GitHub'da. TASK-019 dalında **olmayan** 3 commit içerir: `3bd0f3e` (aramadan sonra açık task detayının kapanması), `54ae611` (Playwright E2E, `tests/e2e/`), `8dfc7a3` (README çalıştırma komutları). |
 
-- TASK-019 dalı, TASK-001'in `f795828` commit'inden ayrıldı. Birleştirirken: `3bd0f3e`'deki `Tasks.tsx` düzeltmesi TASK-019'da zaten var (aynı mantık, `set()` artık `window.location.search` okuyor), çakışma beklenir; TASK-019 sürümünü koruyun.
+- `main` bu iki dalın birleşimi; `Tasks.tsx` çakışmasında TASK-019 sürümü korundu. Yeni iş `main`'den `task/TASK-NNN-…` dalı açarak yapılmalı.
 - E2E testleri eski arayüze göre yazıldı (ör. "Ekiplere göre durum", "Task'lar" menüsü, `Yeni task` düğmesi). TASK-019 arayüzüyle çalışmaları için güncellenmeleri gerekir.
 - Bu dala birden fazla oturum commit attı (ör. `36115b1` proje yıldızlama). Aynı anda iki oturum aynı dosyalarda çalışmasın.
 
@@ -54,7 +55,7 @@ Hesaplar (`@demo.local`, parola `.env` → `CTH_SEED_PASSWORD`): `director`, `au
 
 ## Kalan işler (öncelik sırası)
 1. **Parola rotasyonu (kullanıcı):** eski bir commit kısa süre GitHub'da açık kaldı. `.env` parolalarını değiştir → `docker compose down -v` → up + seed. Agent `.env` yazamaz.
-2. **PR:** `gh auth login` yok. TASK-019 → hedef dal kararı (TASK-001 dalına mı, `main`'e mi) kullanıcıda; önce TASK-001'deki 3 commit'in birleştirilmesi.
+2. GitHub'da varsayılan dal hâlâ `task/TASK-001-initial-app` olabilir; repo ayarlarından `main` yapılmalı (kullanıcı). `main` için branch protection kurulmalı. PR akışı için `gh auth login`.
 3. **E2E testlerini** TASK-019 arayüzüne göre güncelle (`tests/e2e/specs/journeys.spec.ts`), sonra `pnpm test:e2e`.
 4. **Netleştirilecekler (kullanıcı):** unit kısaltmalarının doğru açılımları; puan formülü; tasarımdaki "Ekip Panosu" menüsünün neye karşılık geldiği (şimdilik eklenmedi); görevlerde saat alanı (tasarımda saat var, modelde yalnızca tarih).
 5. Görev listesinde **unit filtresi** yok; dashboard'daki unit satırlarından task listesine bağlantı bu yüzden yok.
