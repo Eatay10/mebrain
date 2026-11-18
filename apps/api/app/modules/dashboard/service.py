@@ -17,9 +17,9 @@ from sqlalchemy.orm import Session
 from app import contract as c
 from app.auth.scope import in_scope, involved_filter, managed_team_ids, team_filter, visible_team_ids
 from app.contract import DashboardBreakdownKind as BK
-from app.contract import ProjectStatus, Role, TaskType
+from app.contract import ParticipationStatus, ProjectStatus, Role, TaskStatus, TaskType
 from app.core.errors import NotFound
-from app.models import Project, Task, TaskWatcher, Team, Unit, User
+from app.models import EventParticipation, Project, Task, TaskWatcher, Team, Unit, User
 from app.models.base import utcnow
 from app.modules.projects.service import progress_for
 from app.modules.tasks import counting
@@ -139,6 +139,65 @@ def breakdown(db: Session, user: User, scope: set[UUID] | None, where: list[Any]
     return c.DashboardBreakdown(kind=kind, rows=rows)
 
 
+def today_counts(db: Session, user: User, scope: set[UUID] | None) -> c.DashboardToday:
+    """Son tarihi bugün olan task'lar: çalışan için kendi (sorumlu/yedek), diğer roller için kapsamı."""
+    today = date.today()
+    who = (
+        (Task.assignee_id == user.id) | (Task.backup_assignee_id == user.id)
+        if user.role == Role.EMPLOYEE
+        else team_filter(Task.team_id, scope)
+    )
+    mine = [counting.live_task_filter(), Task.due_date == today, who]
+    total = db.scalar(select(func.count()).select_from(Task).where(*mine)) or 0
+    done = db.scalar(select(func.count()).select_from(Task).where(*mine, Task.status == TaskStatus.DONE)) or 0
+    return c.DashboardToday(total=total, done=done)
+
+
+def approvals(db: Session, user: User) -> c.DashboardApprovals:
+    """Karar verebilen için kararını bekleyen talepler; diğerleri için kendi talepleri."""
+    since = utcnow() - timedelta(days=30)
+    if user.role == Role.DIRECTOR:
+        whose = None
+    elif user.role in (Role.MANAGER, Role.UNIT_MANAGER):
+        teams = managed_team_ids(db, user) or set()
+        whose = EventParticipation.user_id.in_(
+            select(User.id).where(User.team_id.in_(teams), User.id != user.id)
+        )
+    else:
+        whose = EventParticipation.user_id == user.id
+    base = [whose] if whose is not None else []
+    pending = db.scalar(
+        select(func.count())
+        .select_from(EventParticipation)
+        .where(*base, EventParticipation.status == ParticipationStatus.REQUESTED)
+    )
+    decided = db.scalar(
+        select(func.count())
+        .select_from(EventParticipation)
+        .where(*base, EventParticipation.decided_at >= since)
+    )
+    return c.DashboardApprovals(pending=pending or 0, decided=decided or 0)
+
+
+def missing_backup(db: Session, user: User) -> int:
+    if user.role not in (Role.MANAGER, Role.UNIT_MANAGER, Role.DIRECTOR):
+        return 0
+    managed = managed_team_ids(db, user)
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(Task)
+            .where(
+                counting.live_task_filter(),
+                team_filter(Task.team_id, managed),
+                Task.status != TaskStatus.DONE,
+                Task.backup_assignee_id.is_(None),
+            )
+        )
+        or 0
+    )
+
+
 def summary(
     db: Session, user: User, team_id: UUID | None, frm: date | None, to: date | None
 ) -> c.DashboardSummary:
@@ -212,6 +271,9 @@ def summary(
         generated_at=utcnow(),
         totals=c.TeamDashboardTotals(all=counting.add(tot_std, tot_prj), standard=tot_std, project=tot_prj),
         breakdown=breakdown(db, user, scope, where),
+        today=today_counts(db, user, scope),
+        approvals=approvals(db, user),
+        missing_backup=missing_backup(db, user),
         teams=team_rows,
         mine=mine,
         avg_progress=round(overall or 0),

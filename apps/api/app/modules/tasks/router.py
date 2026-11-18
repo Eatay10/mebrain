@@ -59,6 +59,7 @@ def list_tasks(
     due_to: Annotated[date | None, Query(alias="dueTo")] = None,
     sort: Annotated[Sort, Query()] = "-updatedAt",
     watching: Annotated[bool | None, Query()] = None,
+    has_backup: Annotated[bool | None, Query(alias="hasBackup")] = None,
     pp: PageParams = Depends(page_params),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
@@ -78,6 +79,7 @@ def list_tasks(
         due_to=due_to,
         sort=sort,
         watching_user=user.id if watching else None,
+        has_backup=has_backup,
     )
     return service.list_tasks(db, user, f, pp)
 

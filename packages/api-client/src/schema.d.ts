@@ -1462,6 +1462,19 @@ export interface components {
              */
             score: number;
         };
+        /** @description Son tarihi bugün olan task'lar — çalışan için sorumlu/yedek olduğu, diğer roller için kapsamındaki */
+        DashboardToday: {
+            total: number;
+            done: number;
+        };
+        /**
+         * @description Onay bekleyen katılım talepleri. Karar verebilen (yönetici, unit yöneticisi, direktör) için kendi
+         *     kararını bekleyenler; diğerleri için kendi talepleri. `decided` son 30 günde karara bağlananlardır.
+         */
+        DashboardApprovals: {
+            pending: number;
+            decided: number;
+        };
         DashboardBreakdown: {
             kind: components["schemas"]["DashboardBreakdownKind"];
             rows: components["schemas"]["DashboardBreakdownRow"][];
@@ -1471,6 +1484,10 @@ export interface components {
             generatedAt: string;
             totals: components["schemas"]["TeamDashboardTotals"];
             breakdown: components["schemas"]["DashboardBreakdown"];
+            today: components["schemas"]["DashboardToday"];
+            approvals: components["schemas"]["DashboardApprovals"];
+            /** @description Kullanıcının yönettiği ekiplerde yedek sorumlusu olmayan açık task sayısı (yönetmiyorsa 0) */
+            missingBackup: number;
             teams: components["schemas"]["TeamDashboard"][];
             mine: components["schemas"]["StatusCounts"];
             /** @description Kapsamdaki aktif projelerin ilerlemesi (en fazla 10, son tarihe göre) */
@@ -2470,6 +2487,8 @@ export interface operations {
                 q?: components["parameters"]["Query"];
                 teamId?: components["schemas"]["Id"];
                 status?: components["schemas"]["ProjectStatus"];
+                /** @description Sadece yıldız koyduğum projeler */
+                watching?: boolean;
             };
             header?: never;
             path?: never;
@@ -2487,8 +2506,6 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-                /** @description Sadece yıldız koyduğum projeler */
-                watching?: boolean;
         };
     };
     createProject: {
@@ -2630,6 +2647,8 @@ export interface operations {
                 sort?: "dueDate" | "-dueDate" | "priority" | "-priority" | "createdAt" | "-createdAt" | "updatedAt" | "-updatedAt";
                 /** @description Sadece yıldızlı task'lar */
                 watching?: boolean;
+                /** @description false → yedek sorumlusu olmayan task'lar; true → yedeği olanlar */
+                hasBackup?: boolean;
             };
             header?: never;
             path?: never;
@@ -4165,25 +4184,6 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
-    getProjectOrganization: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: components["parameters"]["ProjectId"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-            404: components["responses"]["NotFound"];
-        };
-    };
     watchProject: {
         parameters: {
             query?: never;
@@ -4231,6 +4231,25 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getProjectOrganization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
                 content: {
                     "application/json": components["schemas"]["ProjectOrganization"];
                 };

@@ -602,6 +602,11 @@ paths:
           schema:
             type: boolean
           description: Sadece yıldızlı task'lar
+        - name: hasBackup
+          in: query
+          schema:
+            type: boolean
+          description: false → yedek sorumlusu olmayan task'lar; true → yedeği olanlar
       responses:
         '200':
           description: Task listesi
@@ -1988,11 +1993,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
-  /projects/{projectId}/organization:
-    parameters: &id004
-      - &id005
-        $ref: '#/components/parameters/ProjectId'
-    get:
   /projects/{projectId}/watch:
     parameters:
       - $ref: '#/components/parameters/ProjectId'
@@ -2022,6 +2022,11 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+  /projects/{projectId}/organization:
+    parameters: &id004
+      - &id005
+        $ref: '#/components/parameters/ProjectId'
+    get:
       tags:
         - Projects
       operationId: getProjectOrganization
@@ -2773,14 +2778,14 @@ components:
           format: date
         progress:
           $ref: '#/components/schemas/StatusCounts'
+        isWatching:
+          type: boolean
+          description: Oturumdaki kullanıcı bu projeye yıldız koymuş mu
         createdAt:
           type: string
           format: date-time
     ProjectPage:
       allOf:
-        isWatching:
-          type: boolean
-          description: Oturumdaki kullanıcı bu projeye yıldız koymuş mu
         - $ref: '#/components/schemas/PageMeta'
         - type: object
           required: [items]
@@ -3163,6 +3168,30 @@ components:
           description: |
             Performans puanı = round(0,5 × tamamlanma oranı + 0,5 × ortalama ilerleme − gecikmiş oranı),
             0–100 aralığına sıkıştırılır; task'ı olmayan satır için 0.
+    DashboardToday:
+      type: object
+      description: Son tarihi bugün olan task'lar — çalışan için sorumlu/yedek olduğu, diğer roller için kapsamındaki
+      required: [total, done]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        done:
+          type: integer
+          minimum: 0
+    DashboardApprovals:
+      type: object
+      description: |
+        Onay bekleyen katılım talepleri. Karar verebilen (yönetici, unit yöneticisi, direktör) için kendi
+        kararını bekleyenler; diğerleri için kendi talepleri. `decided` son 30 günde karara bağlananlardır.
+      required: [pending, decided]
+      properties:
+        pending:
+          type: integer
+          minimum: 0
+        decided:
+          type: integer
+          minimum: 0
     DashboardBreakdown:
       type: object
       required: [kind, rows]
@@ -3175,7 +3204,7 @@ components:
             $ref: '#/components/schemas/DashboardBreakdownRow'
     DashboardSummary:
       type: object
-      required: [generatedAt, totals, teams, breakdown, mine, projects]
+      required: [generatedAt, totals, teams, breakdown, today, approvals, missingBackup, mine, projects]
       properties:
         generatedAt:
           type: string
@@ -3184,6 +3213,14 @@ components:
           $ref: '#/components/schemas/TeamDashboardTotals'
         breakdown:
           $ref: '#/components/schemas/DashboardBreakdown'
+        today:
+          $ref: '#/components/schemas/DashboardToday'
+        approvals:
+          $ref: '#/components/schemas/DashboardApprovals'
+        missingBackup:
+          type: integer
+          minimum: 0
+          description: Kullanıcının yönettiği ekiplerde yedek sorumlusu olmayan açık task sayısı (yönetmiyorsa 0)
         teams:
           type: array
           items:

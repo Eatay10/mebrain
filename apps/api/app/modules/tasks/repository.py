@@ -48,6 +48,7 @@ class TaskFilters:
     due_to: date | None = None
     sort: str = "-updatedAt"
     watching_user: UUID | None = None
+    has_backup: bool | None = None
 
 
 def _sort_clause(sort: str) -> list[Any]:
@@ -90,6 +91,10 @@ def build_query(db: Session, user: User, f: TaskFilters) -> Select[tuple[Task]]:
                     select(TaskCollaborator.task_id).where(TaskCollaborator.user_id == f.assignee_id)
                 ),
             )
+        )
+    if f.has_backup is not None:
+        conds.append(
+            Task.backup_assignee_id.is_not(None) if f.has_backup else Task.backup_assignee_id.is_(None)
         )
     if f.watching_user:
         conds.append(Task.id.in_(select(TaskWatcher.task_id).where(TaskWatcher.user_id == f.watching_user)))

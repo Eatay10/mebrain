@@ -561,6 +561,22 @@ class DashboardBreakdownRow(BaseModel):
     ]
 
 
+class DashboardToday(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    total: Annotated[int, Field(ge=0)]
+    done: Annotated[int, Field(ge=0)]
+
+
+class DashboardApprovals(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    pending: Annotated[int, Field(ge=0)]
+    decided: Annotated[int, Field(ge=0)]
+
+
 class DashboardBreakdown(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -1304,6 +1320,13 @@ class Project(BaseModel):
     start_date: Annotated[date | None, Field(alias="startDate")] = None
     due_date: Annotated[date | None, Field(alias="dueDate")] = None
     progress: StatusCounts
+    is_watching: Annotated[
+        bool | None,
+        Field(
+            alias="isWatching",
+            description="Oturumdaki kullanıcı bu projeye yıldız koymuş mu",
+        ),
+    ] = None
     created_at: Annotated[AwareDatetime, Field(alias="createdAt")]
 
 
@@ -1320,13 +1343,6 @@ class Task(BaseModel):
     )
     id: UUID
     type: TaskType
-    is_watching: Annotated[
-        bool | None,
-        Field(
-            alias="isWatching",
-            description="Oturumdaki kullanıcı bu projeye yıldız koymuş mu",
-        ),
-    ] = None
     team_id: Annotated[UUID, Field(alias="teamId")]
     team_name: Annotated[str | None, Field(alias="teamName")] = None
     project: Project1 | None = None
@@ -1387,6 +1403,16 @@ class DashboardSummary(BaseModel):
     generated_at: Annotated[AwareDatetime, Field(alias="generatedAt")]
     totals: TeamDashboardTotals
     breakdown: DashboardBreakdown
+    today: DashboardToday
+    approvals: DashboardApprovals
+    missing_backup: Annotated[
+        int,
+        Field(
+            alias="missingBackup",
+            description="Kullanıcının yönettiği ekiplerde yedek sorumlusu olmayan açık task sayısı (yönetmiyorsa 0)",
+            ge=0,
+        ),
+    ]
     teams: list[TeamDashboard]
     mine: StatusCounts
     projects: Annotated[
