@@ -36,6 +36,7 @@ const KIND_TEXT: Record<Exclude<Kind, "NONE">, { chart: string; table: string; c
   TEAM_MANAGER: { chart: "Ekip yöneticilerinin puanları", table: "Ekip yöneticileri", col: "Ekip yöneticisi", empty: "Unit'inizde ekip yok" },
   UNIT: { chart: "Unit'lere göre durum", table: "Unit tablosu", col: "Unit", empty: "Görüntülenecek unit yok" },
 };
+const AXIS_TICK = { fill: "var(--text-muted)", fontSize: 12 };
 const SCORE_HINT = "Puan = 0,5 × tamamlanma oranı + 0,5 × ortalama ilerleme − gecikmiş oranı (0–100)";
 
 function taskLink(teamId: string | undefined, part: Part, col: (typeof COLS)[number], assigneeId?: string | null): string {
@@ -59,6 +60,7 @@ export function DashboardPage() {
   const kind: Kind | undefined = d?.breakdown.kind;
   const rows = d?.breakdown.rows ?? [];
   const text = kind && kind !== "NONE" ? KIND_TEXT[kind] : undefined;
+  const horizontal = kind === "MEMBER";
   const chartData = rows.map((r) => ({
     name: r.label,
     Başlanmadı: r[part].todo,
@@ -147,38 +149,52 @@ export function DashboardPage() {
                   title={text?.chart ?? "Durum"}
                   subtitle={kind === "TEAM_MANAGER" ? SCORE_HINT : PART_LABEL[part]}
                 />
-                <div className="h-72 px-2 py-4">
+                {/* Çalışan kırılımında satır çok olabilir: isimler okunaklı kalsın diye yatay çubuk, yükseklik satır sayısına göre. */}
+                <div className="px-2 py-4" style={{ height: horizontal ? Math.max(288, chartData.length * 28 + 64) : 288 }}>
                   {!d ? (
                     <Skeleton className="m-4 h-60" />
                   ) : chartData.length === 0 ? (
                     <EmptyState title={text?.empty ?? "Veri yok"} />
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData} margin={{ left: 0, right: 16 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                        <XAxis dataKey="name" tick={{ fill: "var(--text-muted)", fontSize: 12 }} axisLine={false} tickLine={false} interval={0} />
-                        <YAxis
-                          tick={{ fill: "var(--text-muted)", fontSize: 12 }}
-                          axisLine={false}
-                          tickLine={false}
-                          allowDecimals={false}
-                          domain={kind === "TEAM_MANAGER" ? [0, 100] : undefined}
-                        />
+                      <BarChart data={chartData} layout={horizontal ? "vertical" : "horizontal"} margin={{ left: 0, right: 16 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={horizontal} horizontal={!horizontal} />
+                        {horizontal
+                          ? [
+                              <XAxis key="x" type="number" tick={AXIS_TICK} axisLine={false} tickLine={false} allowDecimals={false} />,
+                              <YAxis key="y" type="category" dataKey="name" width={150} tick={AXIS_TICK} axisLine={false} tickLine={false} interval={0} />,
+                            ]
+                          : [
+                              <XAxis key="x" dataKey="name" tick={AXIS_TICK} axisLine={false} tickLine={false} interval={0} />,
+                              <YAxis
+                                key="y"
+                                tick={AXIS_TICK}
+                                axisLine={false}
+                                tickLine={false}
+                                allowDecimals={false}
+                                domain={kind === "TEAM_MANAGER" ? [0, 100] : undefined}
+                              />,
+                            ]}
                         <Tooltip
                           cursor={{ fill: "var(--surface-2)" }}
                           contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)" }}
                         />
-                        {kind === "TEAM_MANAGER" ? (
-                          <Bar dataKey="Puan" fill="var(--primary)" radius={[4, 4, 0, 0]} />
-                        ) : (
-                          <>
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Bar dataKey="Başlanmadı" stackId="a" fill="var(--todo)" />
-                            <Bar dataKey="Devam ediyor" stackId="a" fill="var(--progress)" />
-                            <Bar dataKey="Bloklu" stackId="a" fill="var(--blocked)" />
-                            <Bar dataKey="Tamamlandı" stackId="a" fill="var(--done)" radius={[4, 4, 0, 0]} />
-                          </>
-                        )}
+                        {/* Recharts alt bileşenleri Fragment içinde görmez; dizi olarak verilmeli. */}
+                        {kind === "TEAM_MANAGER"
+                          ? [<Bar key="score" dataKey="Puan" fill="var(--primary)" radius={[4, 4, 0, 0]} />]
+                          : [
+                              <Legend key="legend" wrapperStyle={{ fontSize: 12 }} />,
+                              <Bar key="todo" dataKey="Başlanmadı" stackId="a" fill="var(--todo)" />,
+                              <Bar key="prog" dataKey="Devam ediyor" stackId="a" fill="var(--progress)" />,
+                              <Bar key="blk" dataKey="Bloklu" stackId="a" fill="var(--blocked)" />,
+                              <Bar
+                                key="done"
+                                dataKey="Tamamlandı"
+                                stackId="a"
+                                fill="var(--done)"
+                                radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
+                              />,
+                            ]}
                       </BarChart>
                     </ResponsiveContainer>
                   )}
