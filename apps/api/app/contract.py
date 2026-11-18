@@ -1320,6 +1320,13 @@ class Task(BaseModel):
     )
     id: UUID
     type: TaskType
+    is_watching: Annotated[
+        bool | None,
+        Field(
+            alias="isWatching",
+            description="Oturumdaki kullanıcı bu projeye yıldız koymuş mu",
+        ),
+    ] = None
     team_id: Annotated[UUID, Field(alias="teamId")]
     team_name: Annotated[str | None, Field(alias="teamName")] = None
     project: Project1 | None = None

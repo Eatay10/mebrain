@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, Building2, Crown, Network, Plus, Trash2, User as UserIcon, Users } from "lucide-react";
+import { ArrowLeft, Building2, Crown, Network, Plus, Star, Trash2, User as UserIcon, Users } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useParams } from "react-router";
@@ -16,6 +16,7 @@ import {
   useUpdateProject,
   useUsers,
   type Schemas,
+  useProjectWatchToggle,
 } from "../api/hooks";
 import { useAuth } from "../auth";
 import {
@@ -54,7 +55,8 @@ export function ProjectsPage() {
   const [teamId, setTeamId] = useState("");
   const [status, setStatus] = useState<Schemas["ProjectStatus"] | "">("ACTIVE");
   const [open, setOpen] = useState(false);
-  const projects = useProjects({ teamId: teamId || undefined, status: status || undefined });
+  const [starred, setStarred] = useState(false);
+  const projects = useProjects({ teamId: teamId || undefined, status: status || undefined, watching: starred || undefined });
   const canCreate = can.manage && (teams.data ?? []).some((t) => managesTeam(t.id));
   return (
     <>
@@ -72,19 +74,29 @@ export function ProjectsPage() {
           <option value="">Tüm durumlar</option>
           {Object.entries(projectStatusLabel).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </Select>
+        <Button variant={starred ? "primary" : "secondary"} aria-pressed={starred} onClick={() => setStarred((v) => !v)}>
+          <Star className={`size-4 ${starred ? "fill-current" : ""}`} aria-hidden />
+          Yıldızlı
+        </Button>
       </div>
       {projects.error ? (
         <Card><ErrorState message={errorMessage(projects.error)} onRetry={() => void projects.refetch()} /></Card>
       ) : projects.isPending ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-40" />)}</div>
       ) : projects.data.items.length === 0 ? (
-        <Card><EmptyState title="Proje bulunamadı" description="Filtreleri değiştirin." /></Card>
+        <Card>
+          <EmptyState
+            title={starred ? "Yıldızlı proje yok" : "Proje bulunamadı"}
+            description={starred ? "Proje kartındaki yıldız ile takip etmeye başlayın." : "Filtreleri değiştirin."}
+          />
+        </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {projects.data.items.map((p) => (
-            <Link key={p.id} to={`/projects/${p.id}`} className="rounded-xl">
+            <div key={p.id} className="relative">
+            <Link to={`/projects/${p.id}`} className="block h-full rounded-xl">
               <Card className="h-full p-5 transition-colors hover:border-primary">
-                <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start justify-between gap-2 pr-9">
                   <h2 className="font-semibold text-text">{p.name}</h2>
                   <Badge className={statusTone[p.status]}>{projectStatusLabel[p.status]}</Badge>
                 </div>
@@ -100,6 +112,8 @@ export function ProjectsPage() {
                 <p className="mt-1 text-xs text-muted">Son tarih: {fmtDate(p.dueDate)}</p>
               </Card>
             </Link>
+            <StarButton projectId={p.id} name={p.name} watching={!!p.isWatching} className="absolute top-3 right-3" />
+            </div>
           ))}
         </div>
       )}
@@ -198,7 +212,12 @@ export function ProjectDetailPage() {
       <PageHeader
         title={p.name}
         subtitle={`${p.teamName} · Sahip: ${p.owner?.fullName ?? "—"} · ${fmtDate(p.startDate)} – ${fmtDate(p.dueDate)}`}
-        actions={managesTeam(p.teamId) && !can.readOnly && <Button variant="secondary" onClick={() => setEditing(true)}>Düzenle</Button>}
+        actions={
+          <>
+            <StarButton projectId={p.id} name={p.name} watching={!!p.isWatching} withLabel />
+            {managesTeam(p.teamId) && !can.readOnly && <Button variant="secondary" onClick={() => setEditing(true)}>Düzenle</Button>}
+          </>
+        }
       />
       {p.description && <p className="mb-6 max-w-3xl text-sm whitespace-pre-wrap text-muted">{p.description}</p>}
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-5">
@@ -366,5 +385,40 @@ function ProjectOrganization({ projectId, canManage }: { projectId: string; canM
         )}
       </Card>
     </div>
+  );
+}
+
+/** Projeye yıldız koy / kaldır. Yıldız kişiseldir; projeyi gören herkes kullanabilir. */
+function StarButton({
+  projectId,
+  name,
+  watching,
+  withLabel,
+  className,
+}: {
+  projectId: string;
+  name: string;
+  watching: boolean;
+  withLabel?: boolean;
+  className?: string;
+}) {
+  const toggle = useProjectWatchToggle(projectId);
+  const toast = useToast();
+  const label = watching ? `${name} projesinden yıldızı kaldır` : `${name} projesine yıldız koy`;
+  return (
+    <button
+      type="button"
+      aria-pressed={watching}
+      aria-label={label}
+      title={watching ? "Yıldızı kaldır" : "Yıldız koy"}
+      disabled={toggle.isPending}
+      onClick={() => toggle.mutate(!watching, { onError: (e) => toast("error", errorMessage(e)) })}
+      className={`inline-flex items-center gap-1.5 rounded-lg p-1.5 text-sm hover:bg-surface-2 disabled:opacity-60 ${
+        watching ? "text-blocked" : "text-muted hover:text-text"
+      } ${withLabel ? "h-10 border border-border px-3" : ""} ${className ?? ""}`}
+    >
+      <Star className={`size-5 ${watching ? "fill-current" : ""}`} aria-hidden />
+      {withLabel && (watching ? "Yıldızlı" : "Yıldız koy")}
+    </button>
   );
 }

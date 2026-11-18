@@ -148,6 +148,18 @@ class TaskWatcher(Base):
     created_at: Mapped[datetime] = created_at_col()
 
 
+class ProjectWatcher(Base):
+    """Projeye yıldız (takip): kullanıcının yıldızlı projeleri."""
+
+    __tablename__ = "project_watchers"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True, index=True)
+    created_at: Mapped[datetime] = created_at_col()
+
+
 class TaskProgressEntry(Base):
     """İlerleme tarihçesi (timeline) — yalnızca ekleme."""
 

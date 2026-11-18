@@ -946,6 +946,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/watch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Projeye yıldız koy (takip et) */
+        put: operations["watchProject"];
+        post?: never;
+        /** Projeden yıldızı kaldır */
+        delete: operations["unwatchProject"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/organization": {
         parameters: {
             query?: never;
@@ -1267,6 +1287,8 @@ export interface components {
             /** Format: date */
             dueDate?: string | null;
             progress: components["schemas"]["StatusCounts"];
+            /** @description Oturumdaki kullanıcı bu projeye yıldız koymuş mu */
+            isWatching?: boolean;
             /** Format: date-time */
             createdAt: string;
         };
@@ -2465,6 +2487,8 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+                /** @description Sadece yıldız koyduğum projeler */
+                watching?: boolean;
         };
     };
     createProject: {
@@ -4157,6 +4181,56 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    watchProject: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Takip ediliyor */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    unwatchProject: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez. */
+                "X-CSRF-Token"?: components["parameters"]["CsrfToken"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Takip bırakıldı */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
                 content: {
                     "application/json": components["schemas"]["ProjectOrganization"];
                 };

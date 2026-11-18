@@ -2,7 +2,9 @@
 
 from uuid import UUID
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -13,7 +15,7 @@ from app.auth.scope import in_scope, team_filter, visible_team_ids
 from app.contract import OrgNodeKind, Role, StakeholderRole, TaskStatus
 from app.core.errors import BadRequest, Conflict, NotFound
 from app.core.schemas import PageParams, user_ref
-from app.models import Project, ProjectStakeholder, Task, TaskCollaborator, Team, Unit, User
+from app.models import Project, ProjectStakeholder, ProjectWatcher, Task, TaskCollaborator, Team, Unit, User
 from app.models.base import utcnow
 from app.modules.tasks import counting
 from app.security_events.service import emit
@@ -21,7 +23,7 @@ from app.security_events.service import emit
 TRACKED = ("name", "description", "owner_id", "status", "start_date", "due_date")
 
 
-def to_contract(p: Project, progress: c.StatusCounts | None = None) -> c.Project:
+def to_contract(p: Project, progress: c.StatusCounts | None = None, watching: bool = False) -> c.Project:
     return c.Project(
         id=p.id,
         team_id=p.team_id,
@@ -33,6 +35,7 @@ def to_contract(p: Project, progress: c.StatusCounts | None = None) -> c.Project
         start_date=p.start_date,
         due_date=p.due_date,
         progress=progress or counting.empty(),
+        is_watching=watching,
         created_at=p.created_at,
     )
 
@@ -54,9 +57,38 @@ def get_visible(db: Session, user: User, project_id: UUID) -> Project:
     return p
 
 
+def watched_ids(db: Session, user: User, ids: list[UUID]) -> set[UUID]:
+    if not ids:
+        return set()
+    return set(
+        db.scalars(
+            select(ProjectWatcher.project_id).where(
+                ProjectWatcher.user_id == user.id, ProjectWatcher.project_id.in_(ids)
+            )
+        )
+    )
+
+
+def watch(db: Session, user: User, project_id: UUID, on: bool) -> None:
+    """Yıldız kişiseldir: projeyi görebilen herkes (denetmen dahil) koyabilir."""
+    p = get_visible(db, user, project_id)
+    if on:
+        db.execute(
+            insert(ProjectWatcher)
+            .values(project_id=p.id, user_id=user.id, created_at=utcnow())
+            .on_conflict_do_nothing()
+        )
+    else:
+        db.execute(
+            sa_delete(ProjectWatcher).where(
+                ProjectWatcher.project_id == p.id, ProjectWatcher.user_id == user.id
+            )
+        )
+
+
 def get(db: Session, user: User, project_id: UUID) -> c.Project:
     p = get_visible(db, user, project_id)
-    return to_contract(p, progress_for(db, [p.id]).get(p.id))
+    return to_contract(p, progress_for(db, [p.id]).get(p.id), p.id in watched_ids(db, user, [p.id]))
 
 
 def list_projects(
@@ -66,6 +98,7 @@ def list_projects(
     q: str | None,
     team_id: UUID | None,
     status: c.ProjectStatus | None,
+    watching: bool | None = None,
 ) -> c.ProjectPage:
     stmt = select(Project).where(
         Project.deleted_at.is_(None), team_filter(Project.team_id, visible_team_ids(db, user))
@@ -78,6 +111,10 @@ def list_projects(
         stmt = stmt.where(Project.team_id == team_id)
     if status:
         stmt = stmt.where(Project.status == status)
+    if watching:
+        stmt = stmt.where(
+            Project.id.in_(select(ProjectWatcher.project_id).where(ProjectWatcher.user_id == user.id))
+        )
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = list(
         db.scalars(
@@ -87,8 +124,9 @@ def list_projects(
         ).unique()
     )
     prog = progress_for(db, [p.id for p in rows])
+    starred = watched_ids(db, user, [p.id for p in rows])
     return c.ProjectPage(
-        items=[to_contract(p, prog.get(p.id)) for p in rows],
+        items=[to_contract(p, prog.get(p.id), p.id in starred) for p in rows],
         total=total,
         page=pp.page,
         page_size=pp.page_size,

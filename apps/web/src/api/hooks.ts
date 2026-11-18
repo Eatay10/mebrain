@@ -214,7 +214,13 @@ export function useCreateTeam() {
 }
 
 // ---------------------------------------------------------------- projects
-export function useProjects(q: { teamId?: string; status?: Schemas["ProjectStatus"]; q?: string; page?: number }) {
+export function useProjects(q: {
+  teamId?: string;
+  status?: Schemas["ProjectStatus"];
+  q?: string;
+  page?: number;
+  watching?: boolean;
+}) {
   return useQuery({
     queryKey: ["projects", q],
     queryFn: () => unwrap(api.GET("/projects", { params: { query: { pageSize: 50, ...q } } })),
@@ -514,6 +520,17 @@ export function useWatchToggle(taskId: string) {
       done();
       void qc.invalidateQueries({ queryKey: ["watchers", taskId] });
     },
+  });
+}
+
+export function useProjectWatchToggle(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (on: boolean) =>
+      on
+        ? unwrap(api.PUT("/projects/{projectId}/watch", { params: { path: { projectId } } }))
+        : unwrap(api.DELETE("/projects/{projectId}/watch", { params: { path: { projectId } } })),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["projects"] }),
   });
 }
 

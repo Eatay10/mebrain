@@ -420,6 +420,11 @@ paths:
           in: query
           schema:
             $ref: '#/components/schemas/ProjectStatus'
+        - name: watching
+          in: query
+          description: Sadece yıldız koyduğum projeler
+          schema:
+            type: boolean
       responses:
         '200':
           description: Proje listesi (ilerleme bilgisiyle)
@@ -1988,6 +1993,35 @@ paths:
       - &id005
         $ref: '#/components/parameters/ProjectId'
     get:
+  /projects/{projectId}/watch:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    put:
+      tags: [Projects]
+      operationId: watchProject
+      summary: Projeye yıldız koy (takip et)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204':
+          description: Takip ediliyor
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Projects]
+      operationId: unwatchProject
+      summary: Projeden yıldızı kaldır
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204':
+          description: Takip bırakıldı
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
       tags:
         - Projects
       operationId: getProjectOrganization
@@ -2744,6 +2778,9 @@ components:
           format: date-time
     ProjectPage:
       allOf:
+        isWatching:
+          type: boolean
+          description: Oturumdaki kullanıcı bu projeye yıldız koymuş mu
         - $ref: '#/components/schemas/PageMeta'
         - type: object
           required: [items]

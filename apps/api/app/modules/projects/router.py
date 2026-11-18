@@ -20,11 +20,12 @@ def list_projects(
     q: Annotated[str | None, Query(max_length=100)] = None,
     team_id: Annotated[UUID | None, Query(alias="teamId")] = None,
     status: Annotated[c.ProjectStatus | None, Query()] = None,
+    watching: Annotated[bool | None, Query()] = None,
     pp: PageParams = Depends(page_params),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> c.ProjectPage:
-    return service.list_projects(db, user, pp, q, team_id, status)
+    return service.list_projects(db, user, pp, q, team_id, status, watching)
 
 
 @router.post(
@@ -119,4 +120,28 @@ def remove_stakeholder(
     db: Session = Depends(get_db),
 ) -> Response:
     service.remove_stakeholder(db, user, projectId, stakeholderId)
+    return Response(status_code=204)
+
+
+@router.put(
+    "/projects/{projectId}/watch", operation_id="watchProject", status_code=204, dependencies=[SessionOnly]
+)
+def watch_project(
+    projectId: UUID,  # noqa: N803
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    service.watch(db, user, projectId, True)
+    return Response(status_code=204)
+
+
+@router.delete(
+    "/projects/{projectId}/watch", operation_id="unwatchProject", status_code=204, dependencies=[SessionOnly]
+)
+def unwatch_project(
+    projectId: UUID,  # noqa: N803
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    service.watch(db, user, projectId, False)
     return Response(status_code=204)

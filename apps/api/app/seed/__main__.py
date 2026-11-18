@@ -896,6 +896,7 @@ TABLES = [
     "attachments",
     "task_progress_entries",
     "task_watchers",
+    "project_watchers",
     "task_collaborators",
     "report_schedules",
     "notifications",
