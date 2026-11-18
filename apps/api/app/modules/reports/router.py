@@ -14,7 +14,7 @@ from app.models import User
 from app.modules.reports import schedules, service
 
 router = APIRouter(tags=["Reports"])
-GroupBy = Literal["team", "assignee", "project", "status", "priority", "category", "type"]
+GroupBy = Literal["unit", "team", "assignee", "project", "status", "priority", "category", "type"]
 
 
 @router.get(
@@ -29,12 +29,13 @@ def task_report(
     frm: Annotated[date, Query(alias="from")],
     to: Annotated[date, Query()],
     team_id: Annotated[UUID | None, Query(alias="teamId")] = None,
+    unit_id: Annotated[UUID | None, Query(alias="unitId")] = None,
     project_id: Annotated[UUID | None, Query(alias="projectId")] = None,
     format: Annotated[Literal["json", "csv"], Query()] = "json",  # noqa: A002
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> c.TaskReport | Response:
-    report = service.build(db, user, group_by, frm, to, team_id, project_id)
+    report = service.build(db, user, group_by, frm, to, team_id, project_id, unit_id)
     if format == "csv":
         return csv_response(service.csv_rows(db, user, report), f"task-report-{group_by}-{frm}-{to}.csv")
     return report

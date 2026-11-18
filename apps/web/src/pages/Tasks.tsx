@@ -22,6 +22,7 @@ import { priorityLabel, statusLabel, typeLabel } from "../i18n/tr";
 import { fmtDate } from "../lib/format";
 import { TaskDetailModal } from "./TaskDetail";
 import { TaskFormModal } from "./TaskForm";
+import { TeamOptions } from "../components/TeamOptions";
 
 const STATUSES: Schemas["TaskStatus"][] = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE"];
 type Sort = NonNullable<TaskFilters["sort"]>;
@@ -91,7 +92,7 @@ export function TasksPage({ projectId, embedded }: { projectId?: string; embedde
           </div>
           <Select aria-label="Ekip" value={params.get("teamId") ?? ""} onChange={(e) => set("teamId", e.target.value)} className="w-44">
             <option value="">Tüm ekipler</option>
-            {teams.data?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            <TeamOptions teams={teams.data} />
           </Select>
           <Select aria-label="Tür" value={params.get("type") ?? ""} onChange={(e) => set("type", e.target.value)} className="w-36">
             <option value="">Tüm türler</option>

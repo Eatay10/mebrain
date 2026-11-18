@@ -851,9 +851,14 @@ paths:
           required: true
           schema:
             type: string
-            enum: [team, assignee, project, status, priority, category, type]
+            enum: [unit, team, assignee, project, status, priority, category, type]
         - name: teamId
           in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: unitId
+          in: query
+          description: Sadece bu unit'in ekipleri (kapsam dışı unit → 404)
           schema:
             $ref: '#/components/schemas/Id'
         - name: projectId
@@ -3825,6 +3830,7 @@ components:
     ReportGroupBy:
       type: string
       enum:
+        - unit
         - team
         - assignee
         - project

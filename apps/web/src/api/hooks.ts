@@ -59,10 +59,11 @@ export function useDashboard(params: { teamId?: string }) {
 }
 
 export function useTaskReport(q: {
-  groupBy: "team" | "assignee" | "project" | "status" | "priority" | "category" | "type";
+  groupBy: "unit" | "team" | "assignee" | "project" | "status" | "priority" | "category" | "type";
   from: string;
   to: string;
   teamId?: string;
+  unitId?: string;
 }) {
   return useQuery({
     queryKey: ["report", q],

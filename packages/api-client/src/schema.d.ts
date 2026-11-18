@@ -1750,7 +1750,7 @@ export interface components {
         /** @enum {string} */
         ReportFrequency: "WEEKLY" | "MONTHLY";
         /** @enum {string} */
-        ReportGroupBy: "team" | "assignee" | "project" | "status" | "priority" | "category" | "type";
+        ReportGroupBy: "unit" | "team" | "assignee" | "project" | "status" | "priority" | "category" | "type";
         /** @enum {string} */
         StakeholderRole: "SPONSOR" | "OWNER" | "LEAD" | "MEMBER" | "STAKEHOLDER" | "OBSERVER";
         /** @enum {string} */
@@ -2896,8 +2896,10 @@ export interface operations {
     getTaskReport: {
         parameters: {
             query: {
-                groupBy: "team" | "assignee" | "project" | "status" | "priority" | "category" | "type";
+                groupBy: "unit" | "team" | "assignee" | "project" | "status" | "priority" | "category" | "type";
                 teamId?: components["schemas"]["Id"];
+                /** @description Sadece bu unit'in ekipleri (kapsam dışı unit → 404) */
+                unitId?: components["schemas"]["Id"];
                 projectId?: components["schemas"]["Id"];
                 from: string;
                 to: string;

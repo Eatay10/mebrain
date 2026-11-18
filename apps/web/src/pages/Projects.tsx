@@ -39,6 +39,7 @@ import {
 import { projectStatusLabel, stakeholderRoleLabel } from "../i18n/tr";
 import { fmtDate, pct } from "../lib/format";
 import { TasksPage } from "./Tasks";
+import { TeamOptions } from "../components/TeamOptions";
 
 const statusTone: Record<Schemas["ProjectStatus"], string> = {
   ACTIVE: "bg-info-soft text-progress",
@@ -65,7 +66,7 @@ export function ProjectsPage() {
       <div className="mb-4 flex flex-wrap gap-3">
         <Select aria-label="Ekip" value={teamId} onChange={(e) => setTeamId(e.target.value)} className="w-48">
           <option value="">Tüm ekipler</option>
-          {teams.data?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          <TeamOptions teams={teams.data} />
         </Select>
         <Select aria-label="Durum" value={status} onChange={(e) => setStatus(e.target.value as Schemas["ProjectStatus"] | "")} className="w-44">
           <option value="">Tüm durumlar</option>
@@ -160,7 +161,7 @@ function ProjectFormModal({ open, onClose, project }: { open: boolean; onClose: 
         {!project && (
           <Field label="Ekip" htmlFor="p-team" error={formState.errors.teamId?.message}>
             <Select id="p-team" {...register("teamId")}>
-              {(teams.data ?? []).filter((t) => managesTeam(t.id)).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              <TeamOptions teams={(teams.data ?? []).filter((t) => managesTeam(t.id))} />
             </Select>
           </Field>
         )}

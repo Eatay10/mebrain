@@ -31,6 +31,7 @@ from app.modules.reports import service as reports
 TZ = ZoneInfo("Europe/Istanbul")
 RUN_AT = time(8, 0)
 GROUP_TR = {
+    "unit": "unit",
     "team": "ekip",
     "assignee": "kişi",
     "project": "proje",

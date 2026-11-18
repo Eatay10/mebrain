@@ -18,6 +18,7 @@ import {
   Tabs,
 } from "../components/ui";
 import { fmtDate, fmtRelative, pct } from "../lib/format";
+import { TeamOptions } from "../components/TeamOptions";
 
 type Part = "all" | "standard" | "project";
 const PART_LABEL: Record<Part, string> = { all: "Tümü", standard: "Standart task'lar", project: "Proje task'ları" };
@@ -80,11 +81,7 @@ export function DashboardPage() {
             {(teams.data?.length ?? 0) > 1 && (
               <Select aria-label="Ekip filtresi" value={teamId} onChange={(e) => setTeamId(e.target.value)} className="w-48">
                 <option value="">Tüm ekipler</option>
-                {teams.data?.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
+                <TeamOptions teams={teams.data} />
               </Select>
             )}
             <Tabs<Part>

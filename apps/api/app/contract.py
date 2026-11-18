@@ -985,6 +985,7 @@ class ReportFrequency(StrEnum):
 
 
 class ReportGroupBy(StrEnum):
+    UNIT = "unit"
     TEAM = "team"
     ASSIGNEE = "assignee"
     PROJECT = "project"

@@ -33,6 +33,7 @@ import {
 } from "../components/ui";
 import { roleLabel } from "../i18n/tr";
 import { fmtRelative } from "../lib/format";
+import { TeamOptions } from "../components/TeamOptions";
 
 export function AdminPage() {
   const { can } = useAuth();
@@ -77,7 +78,7 @@ function Users() {
             </div>
             <Select aria-label="Ekip" value={teamId} onChange={(e) => (setTeamId(e.target.value), setPage(1))} className="w-44">
               <option value="">Tüm ekipler</option>
-              {teams.data?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              <TeamOptions teams={teams.data} />
             </Select>
             <Button size="sm" onClick={() => setCreating(true)}><Plus className="size-4" />Kullanıcı</Button>
           </>
@@ -104,7 +105,7 @@ function Users() {
                       <label className="sr-only" htmlFor={`team-${u.id}`}>Ekip</label>
                       <Select id={`team-${u.id}`} value={u.teamId ?? ""} disabled={u.role === "DIRECTOR" || u.role === "AUDITOR" || u.role === "UNIT_MANAGER"} onChange={(e) => change(u, { teamId: e.target.value }, "Ekip güncellendi.")} className="h-8 w-40">
                         {!u.teamId && <option value="">—</option>}
-                        {teams.data?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        <TeamOptions teams={teams.data} />
                       </Select>
                     </td>
                     <td className="px-3 py-2 text-xs text-muted">{fmtRelative(u.lastLoginAt)}</td>
@@ -145,7 +146,7 @@ function CreateUserModal({ open, onClose }: { open: boolean; onClose: () => void
         <Field label="E-posta" htmlFor="u-email"><Input id="u-email" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
         <Field label="Unvan" htmlFor="u-title"><Input id="u-title" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></Field>
         <Field label="Rol" htmlFor="u-role"><Select id="u-role" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value as Schemas["Role"] })}>{Object.entries(roleLabel).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select></Field>
-        {!teamless && <Field label="Ekip" htmlFor="u-team"><Select id="u-team" value={f.teamId} onChange={(e) => setF({ ...f, teamId: e.target.value })}>{teams.data?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></Field>}
+        {!teamless && <Field label="Ekip" htmlFor="u-team"><Select id="u-team" value={f.teamId} onChange={(e) => setF({ ...f, teamId: e.target.value })}><TeamOptions teams={teams.data} /></Select></Field>}
         <Field label="Geçici parola" htmlFor="u-pw" hint="En az 12 karakter."><Input id="u-pw" type="password" autoComplete="new-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field>
       </div>
     </Modal>

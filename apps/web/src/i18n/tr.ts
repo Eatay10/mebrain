@@ -103,6 +103,7 @@ export const scopeLabel: Record<Schemas["ApiScope"], string> = {
 };
 
 export const groupByLabel = {
+  unit: "Unit",
   team: "Ekip",
   assignee: "Kişi",
   project: "Proje",

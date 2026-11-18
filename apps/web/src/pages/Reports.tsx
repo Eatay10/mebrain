@@ -10,6 +10,7 @@ import {
   useRunReportSchedule,
   useTaskReport,
   useTeams,
+  useUnits,
   useUpdateReportSchedule,
   type Schemas,
 } from "../api/hooks";
@@ -31,6 +32,7 @@ import {
 } from "../components/ui";
 import { groupByLabel, priorityLabel, reportFrequencyLabel, statusLabel, typeLabel, categoryLabel } from "../i18n/tr";
 import { fmtDateTime, isoDate, pct } from "../lib/format";
+import { TeamOptions } from "../components/TeamOptions";
 
 type GroupBy = keyof typeof groupByLabel;
 const ENUM_LABELS: Record<string, Record<string, string>> = {
@@ -42,13 +44,16 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
 
 export function ReportsPage() {
   const teams = useTeams();
+  const units = useUnits();
   const today = new Date();
   const [groupBy, setGroupBy] = useState<GroupBy>("team");
+  const [unitId, setUnitId] = useState("");
   const [from, setFrom] = useState(isoDate(new Date(today.getTime() - 30 * 864e5)));
   const [to, setTo] = useState(isoDate(today));
   const [teamId, setTeamId] = useState("");
   const invalid = !from || !to || to < from;
-  const report = useTaskReport({ groupBy, from, to, teamId: teamId || undefined });
+  const unitTeams = unitId ? teams.data?.filter((t) => t.unitId === unitId) : teams.data;
+  const report = useTaskReport({ groupBy, from, to, teamId: teamId || undefined, unitId: unitId || undefined });
   const label = (l: string) => ENUM_LABELS[groupBy]?.[l] ?? l;
   const rows = report.data?.rows ?? [];
   const chart = rows.slice(0, 12).map((r) => ({
@@ -66,7 +71,7 @@ export function ReportsPage() {
         subtitle="Task'ların toplu raporu — oluşturulma tarihine göre"
         actions={
           <a
-            href={invalid ? undefined : csvUrl("/reports/tasks", { groupBy, from, to, teamId: teamId || undefined })}
+            href={invalid ? undefined : csvUrl("/reports/tasks", { groupBy, from, to, teamId: teamId || undefined, unitId: unitId || undefined })}
             aria-disabled={invalid}
             className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-on-primary hover:bg-primary-hover aria-disabled:pointer-events-none aria-disabled:opacity-50"
           >
@@ -75,16 +80,30 @@ export function ReportsPage() {
         }
       />
       <Card className="mb-6">
-        <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-5">
           <Field label="Gruplama" htmlFor="r-group">
             <Select id="r-group" value={groupBy} onChange={(e) => setGroupBy(e.target.value as GroupBy)}>
               {Object.entries(groupByLabel).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </Select>
           </Field>
+          <Field label="Unit" htmlFor="r-unit">
+            <Select
+              id="r-unit"
+              value={unitId}
+              disabled={(units.data?.length ?? 0) < 2}
+              onChange={(e) => {
+                setUnitId(e.target.value);
+                setTeamId("");
+              }}
+            >
+              <option value="">Tüm unit'ler</option>
+              {units.data?.map((u) => <option key={u.id} value={u.id}>{u.name}{u.description ? ` — ${u.description}` : ""}</option>)}
+            </Select>
+          </Field>
           <Field label="Ekip" htmlFor="r-team">
             <Select id="r-team" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
-              <option value="">Tüm görünür ekipler</option>
-              {teams.data?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              <option value="">{unitId ? "Unit'in tüm ekipleri" : "Tüm görünür ekipler"}</option>
+              <TeamOptions teams={unitTeams} />
             </Select>
           </Field>
           <Field label="Başlangıç" htmlFor="r-from"><Input id="r-from" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></Field>
@@ -214,7 +233,7 @@ function SchedulesCard() {
         <Field label="Ekip" htmlFor="s-team">
           <Select id="s-team" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
             <option value="">Tümü</option>
-            {(teams.data ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            <TeamOptions teams={teams.data} />
           </Select>
         </Field>
         <Button type="submit" loading={create.isPending} disabled={name.trim().length < 2}>

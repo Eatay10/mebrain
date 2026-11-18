@@ -17,6 +17,7 @@ import {
 import { useAuth } from "../auth";
 import { Button, Field, Input, Modal, Select, Textarea, useToast } from "../components/ui";
 import { categoryLabel, priorityLabel, recurrenceLabel, roleLabel } from "../i18n/tr";
+import { TeamOptions } from "../components/TeamOptions";
 
 // Sözleşmedeki kısıtların aynası (R-TS-04): title 3–200, description ≤ 10000.
 const schema = z
@@ -187,9 +188,7 @@ export function TaskFormModal({ open, onClose, task }: { open: boolean; onClose:
         {!isEdit && type === "STANDARD" && (
           <Field label="Ekip" htmlFor="t-team" error={e.teamId?.message}>
             <Select id="t-team" {...register("teamId")} disabled={!can.manage}>
-              {(can.manage ? manageableTeams : (teams.data ?? []).filter((t) => t.id === user.teamId)).map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
+              <TeamOptions teams={can.manage ? manageableTeams : (teams.data ?? []).filter((t) => t.id === user.teamId)} />
             </Select>
           </Field>
         )}
