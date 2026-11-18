@@ -1,4 +1,4 @@
-import { Plus, Repeat, Search } from "lucide-react";
+import { Paperclip, Plus, Repeat, Search, Star, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useTasks, useTeams, type Schemas, type TaskFilters } from "../api/hooks";
@@ -22,6 +22,7 @@ import { priorityLabel, statusLabel, typeLabel } from "../i18n/tr";
 import { fmtDate } from "../lib/format";
 import { TaskDetailModal } from "./TaskDetail";
 import { TaskFormModal } from "./TaskForm";
+import { TeamOptions } from "../components/TeamOptions";
 
 const STATUSES: Schemas["TaskStatus"][] = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE"];
 type Sort = NonNullable<TaskFilters["sort"]>;
@@ -33,12 +34,13 @@ export function TasksPage({ projectId, embedded }: { projectId?: string; embedde
   const [q, setQ] = useState(params.get("q") ?? "");
   const [creating, setCreating] = useState(false);
 
-  // Her zaman GÜNCEL URL'den türet: gecikmeli arama (q) eski render'ın kapanışıyla çalışır; `params` ya da
-  // setParams'ın fonksiyonel biçimi kullanılırsa arada açılan task detayını (open) siler.
-  const set = (key: string, value?: string | null) => {
+  // Her zaman GÜNCEL URL'den türet: gecikmeli arama (q) eski render'ın kapanışıyla çalışır; `params`
+  // kullanılırsa arada açılan task detayını (open) siler.
+  const set = (key: string, value?: string | null, also: string[] = []) => {
     const next = new URLSearchParams(window.location.search);
     if (value) next.set(key, value);
     else next.delete(key);
+    for (const k of also) next.delete(k);
     if (key !== "page" && key !== "open") next.delete("page");
     setParams(next, { replace: key === "q" });
   };
@@ -61,6 +63,10 @@ export function TasksPage({ projectId, embedded }: { projectId?: string; embedde
       assigneeId: params.get("assigneeId") || undefined,
       overdue: params.get("overdue") === "true" ? true : undefined,
       recurring: params.get("recurring") === "true" ? true : undefined,
+      watching: params.get("watching") === "true" ? true : undefined,
+      hasBackup: params.get("hasBackup") === "false" ? false : undefined,
+      dueFrom: params.get("dueFrom") || undefined,
+      dueTo: params.get("dueTo") || undefined,
       sort: (params.get("sort") as Sort) || "-updatedAt",
       page,
       pageSize: 20,
@@ -92,7 +98,7 @@ export function TasksPage({ projectId, embedded }: { projectId?: string; embedde
           </div>
           <Select aria-label="Ekip" value={params.get("teamId") ?? ""} onChange={(e) => set("teamId", e.target.value)} className="w-44">
             <option value="">Tüm ekipler</option>
-            {teams.data?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            <TeamOptions teams={teams.data} />
           </Select>
           <Select aria-label="Tür" value={params.get("type") ?? ""} onChange={(e) => set("type", e.target.value)} className="w-36">
             <option value="">Tüm türler</option>
@@ -116,6 +122,15 @@ export function TasksPage({ projectId, embedded }: { projectId?: string; embedde
           ))}
           <span className="mx-1 h-5 w-px bg-border" />
           <Chip active={params.get("assigneeId") === "me"} onClick={() => set("assigneeId", params.get("assigneeId") === "me" ? null : "me")}>Bana atanan</Chip>
+          <Chip active={params.get("watching") === "true"} onClick={() => set("watching", params.get("watching") ? null : "true")}>
+            <Star className="size-3" aria-hidden />Yıldızlılar
+          </Chip>
+          <Chip active={params.get("hasBackup") === "false"} onClick={() => set("hasBackup", params.get("hasBackup") ? null : "false")}>Yedeksiz</Chip>
+          {(params.get("dueFrom") || params.get("dueTo")) && (
+            <Chip active onClick={() => set("dueFrom", null, ["dueTo"])}>
+              Son tarih: {params.get("dueFrom") === params.get("dueTo") ? params.get("dueTo") : `${params.get("dueFrom") ?? "…"} – ${params.get("dueTo") ?? "…"}`} ✕
+            </Chip>
+          )}
           <Chip active={params.get("overdue") === "true"} onClick={() => set("overdue", params.get("overdue") ? null : "true")}>Gecikmiş</Chip>
           <Chip active={params.get("recurring") === "true"} onClick={() => set("recurring", params.get("recurring") ? null : "true")}>
             <Repeat className="size-3" />Rutin şablonlar
@@ -134,6 +149,7 @@ export function TasksPage({ projectId, embedded }: { projectId?: string; embedde
                 <tr>
                   <th scope="col" className="px-5 py-3 font-medium">Task</th>
                   <th scope="col" className="px-3 py-3 font-medium">Durum</th>
+                  <th scope="col" className="hidden px-3 py-3 font-medium sm:table-cell">İlerleme</th>
                   <th scope="col" className="hidden px-3 py-3 font-medium md:table-cell">Öncelik</th>
                   <th scope="col" className="hidden px-3 py-3 font-medium lg:table-cell">Sorumlu</th>
                   <th scope="col" className="px-3 py-3 font-medium">Son tarih</th>
@@ -142,7 +158,7 @@ export function TasksPage({ projectId, embedded }: { projectId?: string; embedde
               <tbody className={cx(tasks.isPlaceholderData && "opacity-60")}>
                 {tasks.isPending
                   ? Array.from({ length: 8 }).map((_, i) => (
-                      <tr key={i} className="border-t border-border"><td colSpan={5} className="px-5 py-3"><Skeleton className="h-6" /></td></tr>
+                      <tr key={i} className="border-t border-border"><td colSpan={6} className="px-5 py-3"><Skeleton className="h-6" /></td></tr>
                     ))
                   : tasks.data.items.map((t) => (
                       <tr key={t.id} className="cursor-pointer border-t border-border hover:bg-surface-2" onClick={() => set("open", t.id)}>
@@ -154,9 +170,26 @@ export function TasksPage({ projectId, embedded }: { projectId?: string; embedde
                             <span>{t.teamName}</span>·<span>{typeLabel[t.type]}</span>
                             {t.project && <>·<span className="truncate">{t.project.name}</span></>}
                             {t.recurrence !== "NONE" && <Badge className="bg-primary-soft text-primary"><Repeat className="size-3" />Rutin</Badge>}
+                            {t.isWatching && <Star className="size-3 fill-blocked text-blocked" aria-label="Yıldızlı" />}
+                            {(t.collaborators?.length ?? 0) > 0 && (
+                              <span className="inline-flex items-center gap-0.5" title={t.collaborators!.map((c) => c.fullName).join(", ")}>
+                                <Users className="size-3" aria-hidden />+{t.collaborators!.length}
+                              </span>
+                            )}
+                            {(t.attachmentCount ?? 0) > 0 && (
+                              <span className="inline-flex items-center gap-0.5"><Paperclip className="size-3" aria-hidden />{t.attachmentCount}</span>
+                            )}
                           </p>
                         </td>
                         <td className="px-3 py-3"><StatusBadge status={t.status} /></td>
+                        <td className="hidden px-3 py-3 sm:table-cell">
+                          <div className="flex items-center gap-2">
+                            <div className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-2" aria-hidden>
+                              <div className={cx("h-full rounded-full", t.progress >= 100 ? "bg-done" : "bg-primary")} style={{ width: `${t.progress}%` }} />
+                            </div>
+                            <span className="tabular text-xs text-muted">%{t.progress}</span>
+                          </div>
+                        </td>
                         <td className="hidden px-3 py-3 md:table-cell"><PriorityBadge priority={t.priority} /></td>
                         <td className="hidden px-3 py-3 text-text lg:table-cell">{t.assignee?.fullName ?? <span className="text-muted">Atanmamış</span>}</td>
                         <td className={cx("px-3 py-3 whitespace-nowrap", t.isOverdue ? "font-medium text-danger" : "text-text")}>{fmtDate(t.dueDate)}</td>

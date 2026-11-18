@@ -1,8 +1,23 @@
-import { Download } from "lucide-react";
+import { CalendarClock, Download, Play, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { csvUrl, errorMessage, useTaskReport, useTeams } from "../api/hooks";
 import {
+  csvUrl,
+  errorMessage,
+  useCreateReportSchedule,
+  useDeleteReportSchedule,
+  useReportSchedules,
+  useRunReportSchedule,
+  useTaskReport,
+  useTeams,
+  useUnits,
+  useUpdateReportSchedule,
+  type Schemas,
+} from "../api/hooks";
+import { useAuth } from "../auth";
+import {
+  Badge,
+  Button,
   Card,
   CardHeader,
   EmptyState,
@@ -13,9 +28,12 @@ import {
   ProgressBar,
   Select,
   Skeleton,
+  legendText,
+  useToast,
 } from "../components/ui";
-import { groupByLabel, priorityLabel, statusLabel, typeLabel, categoryLabel } from "../i18n/tr";
-import { isoDate, pct } from "../lib/format";
+import { groupByLabel, priorityLabel, reportFrequencyLabel, statusLabel, typeLabel, categoryLabel } from "../i18n/tr";
+import { fmtDateTime, isoDate, pct } from "../lib/format";
+import { TeamOptions } from "../components/TeamOptions";
 
 type GroupBy = keyof typeof groupByLabel;
 const ENUM_LABELS: Record<string, Record<string, string>> = {
@@ -27,13 +45,16 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
 
 export function ReportsPage() {
   const teams = useTeams();
+  const units = useUnits();
   const today = new Date();
   const [groupBy, setGroupBy] = useState<GroupBy>("team");
+  const [unitId, setUnitId] = useState("");
   const [from, setFrom] = useState(isoDate(new Date(today.getTime() - 30 * 864e5)));
   const [to, setTo] = useState(isoDate(today));
   const [teamId, setTeamId] = useState("");
   const invalid = !from || !to || to < from;
-  const report = useTaskReport({ groupBy, from, to, teamId: teamId || undefined });
+  const unitTeams = unitId ? teams.data?.filter((t) => t.unitId === unitId) : teams.data;
+  const report = useTaskReport({ groupBy, from, to, teamId: teamId || undefined, unitId: unitId || undefined });
   const label = (l: string) => ENUM_LABELS[groupBy]?.[l] ?? l;
   const rows = report.data?.rows ?? [];
   const chart = rows.slice(0, 12).map((r) => ({
@@ -51,7 +72,7 @@ export function ReportsPage() {
         subtitle="Task'ların toplu raporu — oluşturulma tarihine göre"
         actions={
           <a
-            href={invalid ? undefined : csvUrl("/reports/tasks", { groupBy, from, to, teamId: teamId || undefined })}
+            href={invalid ? undefined : csvUrl("/reports/tasks", { groupBy, from, to, teamId: teamId || undefined, unitId: unitId || undefined })}
             aria-disabled={invalid}
             className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-on-primary hover:bg-primary-hover aria-disabled:pointer-events-none aria-disabled:opacity-50"
           >
@@ -60,16 +81,30 @@ export function ReportsPage() {
         }
       />
       <Card className="mb-6">
-        <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-5">
           <Field label="Gruplama" htmlFor="r-group">
             <Select id="r-group" value={groupBy} onChange={(e) => setGroupBy(e.target.value as GroupBy)}>
               {Object.entries(groupByLabel).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </Select>
           </Field>
+          <Field label="Unit" htmlFor="r-unit">
+            <Select
+              id="r-unit"
+              value={unitId}
+              disabled={(units.data?.length ?? 0) < 2}
+              onChange={(e) => {
+                setUnitId(e.target.value);
+                setTeamId("");
+              }}
+            >
+              <option value="">Tüm unit'ler</option>
+              {units.data?.map((u) => <option key={u.id} value={u.id}>{u.name}{u.description ? ` — ${u.description}` : ""}</option>)}
+            </Select>
+          </Field>
           <Field label="Ekip" htmlFor="r-team">
             <Select id="r-team" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
-              <option value="">Tüm görünür ekipler</option>
-              {teams.data?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              <option value="">{unitId ? "Unit'in tüm ekipleri" : "Tüm görünür ekipler"}</option>
+              <TeamOptions teams={unitTeams} />
             </Select>
           </Field>
           <Field label="Başlangıç" htmlFor="r-from"><Input id="r-from" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></Field>
@@ -94,12 +129,13 @@ export function ReportsPage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="name" tick={{ fill: "var(--text-muted)", fontSize: 11 }} interval={0} angle={chart.length > 6 ? -25 : 0} textAnchor={chart.length > 6 ? "end" : "middle"} height={chart.length > 6 ? 70 : 30} />
                   <YAxis tick={{ fill: "var(--text-muted)", fontSize: 12 }} allowDecimals={false} />
-                  <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)" }} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="Başlanmadı" stackId="a" fill="var(--todo)" />
-                  <Bar dataKey="Devam ediyor" stackId="a" fill="var(--progress)" />
-                  <Bar dataKey="Bloklu" stackId="a" fill="var(--blocked)" />
-                  <Bar dataKey="Tamamlandı" stackId="a" fill="var(--done)" />
+                  <Tooltip cursor={{ fill: "var(--surface-2)" }} contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)" }}
+                          itemStyle={{ color: "var(--text)" }} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} formatter={legendText} />
+                  <Bar dataKey="Başlanmadı" stackId="a" fill="var(--chart-todo)" />
+                  <Bar dataKey="Devam ediyor" stackId="a" fill="var(--chart-progress)" />
+                  <Bar dataKey="Bloklu" stackId="a" fill="var(--chart-blocked)" />
+                  <Bar dataKey="Tamamlandı" stackId="a" fill="var(--chart-done)" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -147,6 +183,116 @@ export function ReportsPage() {
           </Card>
         </div>
       )}
+      <SchedulesCard />
     </>
+  );
+}
+
+function SchedulesCard() {
+  const { can } = useAuth();
+  const toast = useToast();
+  const teams = useTeams();
+  const list = useReportSchedules();
+  const create = useCreateReportSchedule();
+  const update = useUpdateReportSchedule();
+  const del = useDeleteReportSchedule();
+  const run = useRunReportSchedule();
+  const [name, setName] = useState("");
+  const [frequency, setFrequency] = useState<Schemas["ReportFrequency"]>("WEEKLY");
+  const [groupBy, setGroupBy] = useState<GroupBy>("team");
+  const [teamId, setTeamId] = useState("");
+  if (!can.manage && !can.readOnly) return null;
+  const onError = (e: unknown) => toast("error", errorMessage(e));
+  return (
+    <Card className="mt-6">
+      <CardHeader
+        title="Planlı raporlar"
+        subtitle="Haftalık ve aylık raporlar önceki dönem için üretilip CSV eki ile e-postanıza gönderilir."
+      />
+      <form
+        className="grid gap-3 border-b border-border px-5 py-4 sm:grid-cols-2 lg:grid-cols-[2fr_1.5fr_1fr_1fr_auto] lg:items-end"
+        onSubmit={(e) => {
+          e.preventDefault();
+          create.mutate(
+            { name: name.trim(), frequency, groupBy, teamId: teamId || undefined },
+            { onSuccess: () => (setName(""), toast("success", "Rapor planlandı.")), onError },
+          );
+        }}
+      >
+        <Field label="Ad" htmlFor="s-name">
+          <Input id="s-name" value={name} onChange={(e) => setName(e.target.value)} minLength={2} maxLength={100} placeholder="Örn. SOC haftalık durum" />
+        </Field>
+        <Field label="Sıklık" htmlFor="s-freq">
+          <Select id="s-freq" value={frequency} onChange={(e) => setFrequency(e.target.value as Schemas["ReportFrequency"])}>
+            {Object.entries(reportFrequencyLabel).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </Select>
+        </Field>
+        <Field label="Gruplama" htmlFor="s-group">
+          <Select id="s-group" value={groupBy} onChange={(e) => setGroupBy(e.target.value as GroupBy)}>
+            {Object.entries(groupByLabel).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </Select>
+        </Field>
+        <Field label="Ekip" htmlFor="s-team">
+          <Select id="s-team" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
+            <option value="">Tümü</option>
+            <TeamOptions teams={teams.data} />
+          </Select>
+        </Field>
+        <Button type="submit" loading={create.isPending} disabled={name.trim().length < 2}>
+          <CalendarClock className="size-4" /> Planla
+        </Button>
+      </form>
+      {list.isPending ? (
+        <Skeleton className="m-5 h-16" />
+      ) : list.error ? (
+        <ErrorState message={errorMessage(list.error)} />
+      ) : list.data.length === 0 ? (
+        <EmptyState title="Planlı rapor yok" description="Yukarıdan haftalık veya aylık rapor planlayın." />
+      ) : (
+        <ul className="divide-y divide-border">
+          {list.data.map((s) => (
+            <li key={s.id} className="flex flex-wrap items-center gap-3 px-5 py-3 text-sm">
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-text">{s.name}</p>
+                <p className="text-xs text-muted">
+                  {reportFrequencyLabel[s.frequency]} · {groupByLabel[s.groupBy as GroupBy]} bazında
+                  {s.teamId ? ` · ${teams.data?.find((t) => t.id === s.teamId)?.name ?? ""}` : ""} · sonraki: {fmtDateTime(s.nextRunAt)}
+                  {s.lastRunAt && ` · son: ${fmtDateTime(s.lastRunAt)}`}
+                </p>
+              </div>
+              {s.lastStatus && (
+                <Badge className={s.lastStatus === "SUCCESS" ? "bg-success-soft text-done" : "bg-danger-soft text-danger"}>
+                  {s.lastStatus === "SUCCESS" ? "Gönderildi" : "Başarısız"}
+                </Badge>
+              )}
+              <label className="flex items-center gap-1.5 text-xs text-muted">
+                <input
+                  type="checkbox"
+                  checked={s.active}
+                  onChange={(e) => update.mutate({ id: s.id, active: e.target.checked }, { onError })}
+                />
+                Aktif
+              </label>
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={run.isPending && run.variables === s.id}
+                onClick={() => run.mutate(s.id, { onSuccess: () => toast("success", "Rapor e-postayla gönderildi."), onError })}
+              >
+                <Play className="size-4" /> Şimdi gönder
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label={`${s.name} planını sil`}
+                onClick={() => confirm("Plan silinsin mi?") && del.mutate(s.id, { onError })}
+              >
+                <Trash2 className="size-4 text-danger" />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }

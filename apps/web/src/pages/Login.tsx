@@ -14,6 +14,7 @@ type Form = z.infer<typeof schema>;
 
 const DEMO = [
   ["director@demo.local", "Direktör"],
+  ["unit.cdc@demo.local", "Birim yöneticisi (TEAM-CDC)"],
   ["manager.soc@demo.local", "Yönetici (SOC + Zafiyet)"],
   ["analyst.soc1@demo.local", "Çalışan (SOC)"],
   ["auditor@demo.local", "Denetmen (salt okunur)"],

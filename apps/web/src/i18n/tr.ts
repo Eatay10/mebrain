@@ -39,6 +39,7 @@ export const recurrenceLabel: Record<Schemas["Recurrence"], string> = {
 export const roleLabel: Record<Schemas["Role"], string> = {
   EMPLOYEE: "Çalışan",
   MANAGER: "Yönetici",
+  UNIT_MANAGER: "Unit yöneticisi",
   DIRECTOR: "Direktör",
   AUDITOR: "Denetmen",
 };
@@ -102,6 +103,7 @@ export const scopeLabel: Record<Schemas["ApiScope"], string> = {
 };
 
 export const groupByLabel = {
+  unit: "Unit",
   team: "Ekip",
   assignee: "Kişi",
   project: "Proje",
@@ -110,3 +112,17 @@ export const groupByLabel = {
   category: "Kategori",
   type: "Tür",
 } as const;
+
+export const stakeholderRoleLabel: Record<Schemas["StakeholderRole"], string> = {
+  SPONSOR: "Sponsor",
+  OWNER: "Sahip",
+  LEAD: "Proje lideri",
+  MEMBER: "Proje üyesi",
+  STAKEHOLDER: "Paydaş",
+  OBSERVER: "Gözlemci",
+};
+
+export const reportFrequencyLabel: Record<Schemas["ReportFrequency"], string> = {
+  WEEKLY: "Haftalık (pazartesi 08:00)",
+  MONTHLY: "Aylık (ayın 1'i 08:00)",
+};

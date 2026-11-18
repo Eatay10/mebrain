@@ -20,11 +20,12 @@ def list_projects(
     q: Annotated[str | None, Query(max_length=100)] = None,
     team_id: Annotated[UUID | None, Query(alias="teamId")] = None,
     status: Annotated[c.ProjectStatus | None, Query()] = None,
+    watching: Annotated[bool | None, Query()] = None,
     pp: PageParams = Depends(page_params),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> c.ProjectPage:
-    return service.list_projects(db, user, pp, q, team_id, status)
+    return service.list_projects(db, user, pp, q, team_id, status, watching)
 
 
 @router.post(
@@ -73,4 +74,74 @@ def delete_project(
     db: Session = Depends(get_db),
 ) -> Response:
     service.delete(db, user, projectId)
+    return Response(status_code=204)
+
+
+@router.get(
+    "/projects/{projectId}/organization",
+    operation_id="getProjectOrganization",
+    response_model=c.ProjectOrganization,
+    dependencies=READ,
+)
+def project_organization(
+    projectId: UUID,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),  # noqa: N803
+) -> c.ProjectOrganization:
+    return service.organization(db, user, projectId)
+
+
+@router.post(
+    "/projects/{projectId}/stakeholders",
+    operation_id="addProjectStakeholder",
+    response_model=c.ProjectStakeholder,
+    status_code=201,
+    dependencies=[SessionOnly],
+)
+def add_stakeholder(
+    projectId: UUID,  # noqa: N803
+    body: c.ProjectStakeholderCreate,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> c.ProjectStakeholder:
+    return service.add_stakeholder(db, user, projectId, body)
+
+
+@router.delete(
+    "/projects/{projectId}/stakeholders/{stakeholderId}",
+    operation_id="removeProjectStakeholder",
+    status_code=204,
+    dependencies=[SessionOnly],
+)
+def remove_stakeholder(
+    projectId: UUID,  # noqa: N803
+    stakeholderId: UUID,  # noqa: N803
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    service.remove_stakeholder(db, user, projectId, stakeholderId)
+    return Response(status_code=204)
+
+
+@router.put(
+    "/projects/{projectId}/watch", operation_id="watchProject", status_code=204, dependencies=[SessionOnly]
+)
+def watch_project(
+    projectId: UUID,  # noqa: N803
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    service.watch(db, user, projectId, True)
+    return Response(status_code=204)
+
+
+@router.delete(
+    "/projects/{projectId}/watch", operation_id="unwatchProject", status_code=204, dependencies=[SessionOnly]
+)
+def unwatch_project(
+    projectId: UUID,  # noqa: N803
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    service.watch(db, user, projectId, False)
     return Response(status_code=204)

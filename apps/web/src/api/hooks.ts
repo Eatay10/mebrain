@@ -59,10 +59,11 @@ export function useDashboard(params: { teamId?: string }) {
 }
 
 export function useTaskReport(q: {
-  groupBy: "team" | "assignee" | "project" | "status" | "priority" | "category" | "type";
+  groupBy: "unit" | "team" | "assignee" | "project" | "status" | "priority" | "category" | "type";
   from: string;
   to: string;
   teamId?: string;
+  unitId?: string;
 }) {
   return useQuery({
     queryKey: ["report", q],
@@ -213,7 +214,13 @@ export function useCreateTeam() {
 }
 
 // ---------------------------------------------------------------- projects
-export function useProjects(q: { teamId?: string; status?: Schemas["ProjectStatus"]; q?: string; page?: number }) {
+export function useProjects(q: {
+  teamId?: string;
+  status?: Schemas["ProjectStatus"];
+  q?: string;
+  page?: number;
+  watching?: boolean;
+}) {
   return useQuery({
     queryKey: ["projects", q],
     queryFn: () => unwrap(api.GET("/projects", { params: { query: { pageSize: 50, ...q } } })),
@@ -247,7 +254,7 @@ export function useUpdateProject(id: string) {
 }
 
 // ---------------------------------------------------------------- events
-export function useEvents(q: { scope?: Schemas["EventScope"]; participantId?: string; q?: string; page?: number }) {
+export function useEvents(q: { scope?: Schemas["EventScope"]; participantId?: string; q?: string; page?: number; from?: string }) {
   return useQuery({
     queryKey: ["events", q],
     queryFn: () => unwrap(api.GET("/events", { params: { query: { pageSize: 50, ...q } } })),
@@ -459,6 +466,303 @@ export function useMetricsSummary(window: "15m" | "1h" | "24h") {
     queryKey: ["metrics", window],
     queryFn: () => unwrap(api.GET("/system/metrics-summary", { params: { query: { window } } })),
     refetchInterval: 15_000,
+  });
+}
+
+// ---------------------------------------------------------------- TASK-019: ilerleme, takip, ekler, öneri
+/** multipart yükleme: openapi-fetch JSON odaklı olduğundan fetch + CSRF ile. */
+async function upload<T>(path: string, form: FormData): Promise<T> {
+  const token = document.cookie
+    .split("; ")
+    .find((c) => c.startsWith("cth_csrf="))
+    ?.slice("cth_csrf=".length);
+  const res = await fetch(`/api/v1${path}`, {
+    method: "POST",
+    body: form,
+    credentials: "same-origin",
+    headers: token ? { "X-CSRF-Token": decodeURIComponent(token) } : {},
+  });
+  const body = res.headers.get("content-type")?.includes("json") ? await res.json() : undefined;
+  if (!res.ok) throw new ApiError(res.status, body as Schemas["Problem"] | undefined);
+  return body as T;
+}
+
+export function useTaskProgress(taskId: string) {
+  return useQuery({
+    queryKey: ["progress", taskId],
+    queryFn: () => unwrap(api.GET("/tasks/{taskId}/progress", { params: { path: { taskId } } })),
+  });
+}
+
+export function useUpdateProgress(taskId: string) {
+  const done = useInvalidateTasks();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Schemas["TaskProgressUpdate"]) =>
+      unwrap(api.POST("/tasks/{taskId}/progress", { params: { path: { taskId } }, body })),
+    onSuccess: () => {
+      done();
+      void qc.invalidateQueries({ queryKey: ["progress", taskId] });
+      void qc.invalidateQueries({ queryKey: ["history", taskId] });
+    },
+  });
+}
+
+export function useWatchToggle(taskId: string) {
+  const done = useInvalidateTasks();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (on: boolean) =>
+      on
+        ? unwrap(api.PUT("/tasks/{taskId}/watch", { params: { path: { taskId } } }))
+        : unwrap(api.DELETE("/tasks/{taskId}/watch", { params: { path: { taskId } } })),
+    onSuccess: () => {
+      done();
+      void qc.invalidateQueries({ queryKey: ["watchers", taskId] });
+    },
+  });
+}
+
+export function useProjectWatchToggle(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (on: boolean) =>
+      on
+        ? unwrap(api.PUT("/projects/{projectId}/watch", { params: { path: { projectId } } }))
+        : unwrap(api.DELETE("/projects/{projectId}/watch", { params: { path: { projectId } } })),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["projects"] }),
+  });
+}
+
+export function useWatchers(taskId: string) {
+  return useQuery({
+    queryKey: ["watchers", taskId],
+    queryFn: () => unwrap(api.GET("/tasks/{taskId}/watchers", { params: { path: { taskId } } })),
+  });
+}
+
+export function useAttachments(taskId: string) {
+  return useQuery({
+    queryKey: ["attachments", taskId],
+    queryFn: () => unwrap(api.GET("/tasks/{taskId}/attachments", { params: { path: { taskId } } })),
+  });
+}
+
+export function useUploadAttachment(taskId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return upload<Schemas["Attachment"]>(`/tasks/${taskId}/attachments`, form);
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["attachments", taskId] });
+      void qc.invalidateQueries({ queryKey: qk.task(taskId) });
+    },
+  });
+}
+
+export function useDeleteAttachment(taskId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      unwrap(api.DELETE("/attachments/{attachmentId}", { params: { path: { attachmentId: id } } })),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["attachments", taskId] });
+      void qc.invalidateQueries({ queryKey: qk.task(taskId) });
+    },
+  });
+}
+
+export function useAssignableUsers(teamId?: string) {
+  return useQuery({
+    queryKey: ["assignable", teamId ?? null],
+    queryFn: () => unwrap(api.GET("/me/assignable-users", { params: { query: { teamId } } })),
+    staleTime: 60_000,
+  });
+}
+
+export function useAssigneeSuggestions(category: Schemas["TaskCategory"] | undefined, teamId?: string) {
+  return useQuery({
+    queryKey: ["suggestions", category, teamId ?? null],
+    queryFn: () =>
+      unwrap(api.GET("/tasks/assignee-suggestions", { params: { query: { category: category!, teamId } } })),
+    enabled: !!category,
+    staleTime: 60_000,
+  });
+}
+
+// ---------------------------------------------------------------- units
+export function useUnits() {
+  return useQuery({ queryKey: ["units"], queryFn: () => unwrap(api.GET("/units")), staleTime: 300_000 });
+}
+
+export function useCreateUnit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Schemas["UnitCreate"]) => unwrap(api.POST("/units", { body })),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["units"] }),
+  });
+}
+
+export function useUpdateUnit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: Schemas["UnitUpdate"] & { id: string }) =>
+      unwrap(api.PATCH("/units/{unitId}", { params: { path: { unitId: id } }, body })),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["units"] });
+      void qc.invalidateQueries({ queryKey: ["teams"] });
+    },
+  });
+}
+
+// ---------------------------------------------------------------- report schedules
+export function useReportSchedules() {
+  return useQuery({ queryKey: ["report-schedules"], queryFn: () => unwrap(api.GET("/report-schedules")) });
+}
+
+export function useCreateReportSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Schemas["ReportScheduleCreate"]) => unwrap(api.POST("/report-schedules", { body })),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["report-schedules"] }),
+  });
+}
+
+export function useUpdateReportSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: Schemas["ReportScheduleUpdate"] & { id: string }) =>
+      unwrap(api.PATCH("/report-schedules/{scheduleId}", { params: { path: { scheduleId: id } }, body })),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["report-schedules"] }),
+  });
+}
+
+export function useDeleteReportSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      unwrap(api.DELETE("/report-schedules/{scheduleId}", { params: { path: { scheduleId: id } } })),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["report-schedules"] }),
+  });
+}
+
+export function useRunReportSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      unwrap(api.POST("/report-schedules/{scheduleId}/run", { params: { path: { scheduleId: id } } })),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["report-schedules"] }),
+  });
+}
+
+// ---------------------------------------------------------------- project organization
+export function useProjectOrganization(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ["projects", "org", projectId],
+    queryFn: () =>
+      unwrap(api.GET("/projects/{projectId}/organization", { params: { path: { projectId: projectId! } } })),
+    enabled: !!projectId,
+  });
+}
+
+export function useAddStakeholder(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Schemas["ProjectStakeholderCreate"]) =>
+      unwrap(api.POST("/projects/{projectId}/stakeholders", { params: { path: { projectId } }, body })),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["projects", "org", projectId] }),
+  });
+}
+
+export function useRemoveStakeholder(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (stakeholderId: string) =>
+      unwrap(
+        api.DELETE("/projects/{projectId}/stakeholders/{stakeholderId}", {
+          params: { path: { projectId, stakeholderId } },
+        }),
+      ),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["projects", "org", projectId] }),
+  });
+}
+
+// ---------------------------------------------------------------- certifications & event photos
+export function useCertifications(userId: string | undefined) {
+  return useQuery({
+    queryKey: ["certifications", userId],
+    queryFn: () => unwrap(api.GET("/users/{userId}/certifications", { params: { path: { userId: userId! } } })),
+    enabled: !!userId,
+  });
+}
+
+export function useAddCertification(userId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Schemas["CertificationCreate"]) =>
+      unwrap(api.POST("/users/{userId}/certifications", { params: { path: { userId } }, body })),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["certifications", userId] });
+      void qc.invalidateQueries({ queryKey: ["user-competencies"] });
+      void qc.invalidateQueries({ queryKey: ["competency-matrix"] });
+    },
+  });
+}
+
+export function useDeleteCertification(userId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      unwrap(api.DELETE("/certifications/{certificationId}", { params: { path: { certificationId: id } } })),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["certifications", userId] }),
+  });
+}
+
+export function useEventPhotos(eventId: string | undefined) {
+  return useQuery({
+    queryKey: ["event-photos", eventId],
+    queryFn: () => unwrap(api.GET("/events/{eventId}/photos", { params: { path: { eventId: eventId! } } })),
+    enabled: !!eventId,
+  });
+}
+
+export function useUploadEventPhoto(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ file, caption }: { file: File; caption?: string }) => {
+      const form = new FormData();
+      form.append("file", file);
+      if (caption) form.append("caption", caption);
+      return upload<Schemas["EventPhoto"]>(`/events/${eventId}/photos`, form);
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["event-photos", eventId] });
+      void qc.invalidateQueries({ queryKey: ["events"] });
+    },
+  });
+}
+
+export function useDeleteEventPhoto(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      unwrap(api.DELETE("/event-photos/{photoId}", { params: { path: { photoId: id } } })),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["event-photos", eventId] });
+      void qc.invalidateQueries({ queryKey: ["events"] });
+    },
+  });
+}
+
+export function useUpdateEvent(eventId: string) {
+  const done = useInvalidateEvents();
+  return useMutation({
+    mutationFn: (body: Schemas["EventUpdate"]) =>
+      unwrap(api.PATCH("/events/{eventId}", { params: { path: { eventId } }, body })),
+    onSuccess: done,
   });
 }
 

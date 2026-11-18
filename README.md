@@ -2,7 +2,7 @@
 
 Siber güvenlik ekiplerinin günlük iş yönetimi aracı: task'lar (standart + proje), etkinlik ve yetkinlik takibi, rol bazlı yetkilendirme (çalışan / yönetici / direktör), toplu raporlama ve bildirimler, REST API + MCP ile veri paylaşımı.
 
-> Durum: API, worker, web ve MCP çalışır durumda (`task/TASK-001-initial-app`).
+> Durum: API, worker, web ve MCP çalışır durumda. Organizasyon: Direktör → 9 unit (TEAM-IAM … TEAM-SMA) → ekipler. Devir notları: [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Hızlı başlangıç
 
@@ -22,7 +22,7 @@ cd apps/api && uv run python -m app.seed --reset   # demo verisi
 | Mailpit | http://localhost:8025 |
 | PostgreSQL | localhost:5433 |
 
-Demo hesapları (`@demo.local`, parola `.env` → `CTH_SEED_PASSWORD`): `director`, `auditor` (salt okunur), `manager.soc` (SOC + Zafiyet), `manager.pentest`, `manager.grc`, `analyst.soc1`…
+Demo hesapları (`@demo.local`, parola `.env` → `CTH_SEED_PASSWORD`): `director`, `auditor` (salt okunur), unit yöneticileri `unit.<iam|cdc|mss|is|s|saa|os|sm|sma>`, ekip yöneticileri `manager.<ekip>` (ör. `manager.soc` — SOC + Zafiyet, `manager.csirt`), çalışanlar `analyst.<ekip><n>` (ör. `analyst.soc1`).
 
 MCP için API token'ı web'de **API & MCP** menüsünden alınır. stdio modunda: `cd apps/mcp && CTH_API_TOKEN=… uv run cth-mcp`.
 

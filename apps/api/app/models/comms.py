@@ -6,8 +6,8 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.contract import NotificationType
-from app.models.base import Base, created_at_col, uuid_pk
+from app.contract import NotificationType, ReportFrequency
+from app.models.base import Base, created_at_col, enum_col, uuid_pk
 from app.models.org import User
 
 
@@ -45,3 +45,23 @@ class Announcement(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     author: Mapped[User] = relationship(lazy="joined")
+
+
+class ReportSchedule(Base):
+    """Haftalık/aylık planlı rapor; worker sahibin yetki kapsamıyla üretip e-postalar."""
+
+    __tablename__ = "report_schedules"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    frequency: Mapped[ReportFrequency] = mapped_column(enum_col(ReportFrequency, "report_frequency"))
+    group_by: Mapped[str] = mapped_column(String(20))
+    team_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("teams.id"))
+    active: Mapped[bool] = mapped_column(default=True)
+    next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_status: Mapped[str | None] = mapped_column(String(10))
+    created_at: Mapped[datetime] = created_at_col()
+
+    owner: Mapped[User] = relationship(lazy="joined")

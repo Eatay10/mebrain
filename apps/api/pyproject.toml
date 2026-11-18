@@ -16,6 +16,7 @@ dependencies = [
   "structlog>=24.4",
   "prometheus-client>=0.20",
   "apscheduler>=3.10,<4",
+  "python-multipart>=0.0.20",
 ]
 
 [dependency-groups]
@@ -44,3 +45,4 @@ ignore = ["S101", "B008"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = ["ac(id): kabul kriteri eşlemesi, ör. TASK-019/AC-1 (R-TEST-02)"]

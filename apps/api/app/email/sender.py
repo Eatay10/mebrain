@@ -7,7 +7,14 @@ from email.message import EmailMessage
 from app.config import get_settings
 
 
-def send(to: str, subject: str, body: str, link_path: str | None = None) -> None:
+def send(
+    to: str,
+    subject: str,
+    body: str,
+    link_path: str | None = None,
+    attachments: list[tuple[str, str, bytes]] | None = None,
+) -> None:
+    """attachments: (dosya adı, MIME türü, içerik)."""
     s = get_settings()
     msg = EmailMessage()
     msg["From"] = s.smtp_from
@@ -20,5 +27,8 @@ def send(to: str, subject: str, body: str, link_path: str | None = None) -> None
         f'<p><a href="{html.escape(link, quote=True)}">Cyber Task Hub\'da aç</a></p>',
         subtype="html",
     )
+    for name, mime, data in attachments or []:
+        maintype, _, subtype = mime.partition("/")
+        msg.add_attachment(data, maintype=maintype, subtype=subtype or "octet-stream", filename=name)
     with smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=10) as smtp:
         smtp.send_message(msg)

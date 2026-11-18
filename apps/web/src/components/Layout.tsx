@@ -2,21 +2,24 @@ import {
   Award,
   Bell,
   BriefcaseBusiness,
+  CalendarCheck,
   CalendarDays,
-  ChartColumn,
-  KeyRound,
-  LayoutDashboard,
-  ListChecks,
+  ChartNoAxesColumn,
+  ChevronDown,
+  Code,
+  House,
   LogOut,
   Megaphone,
   Menu,
   Moon,
+  Search,
+  Shield,
   ShieldAlert,
   Sun,
   Users,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Link, NavLink, Outlet, useNavigate } from "react-router";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useLogout, useMarkRead, useNotifications, useUnreadCount } from "../api/hooks";
 import { useAuth } from "../auth";
 import { roleLabel } from "../i18n/tr";
@@ -115,58 +118,162 @@ function NotificationBell() {
   );
 }
 
+const PAGE_TITLE: Array<[RegExp, string]> = [
+  [/^\/$/, "Genel Bakış"],
+  [/^\/tasks/, "Görevler"],
+  [/^\/projects/, "Projeler"],
+  [/^\/events/, "Etkinlikler"],
+  [/^\/competencies/, "Yetkinlikler"],
+  [/^\/reports/, "Raporlar"],
+  [/^\/announcements/, "Duyurular"],
+  [/^\/security/, "Güvenlik & İzleme"],
+  [/^\/admin/, "Organizasyon"],
+  [/^\/settings\/tokens/, "API & MCP"],
+];
+
+function useDismiss(open: boolean, setOpen: (v: boolean) => void) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open, setOpen]);
+  return box;
+}
+
+function UserMenu({ theme, toggleTheme }: { theme: string; toggleTheme: () => void }) {
+  const { user } = useAuth();
+  const [open, setOpen] = useState(false);
+  const box = useDismiss(open, setOpen);
+  const logout = useLogout();
+  const navigate = useNavigate();
+  return (
+    <div className="relative" ref={box}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 rounded-full p-1 pr-2 hover:bg-surface-2"
+        aria-label="Kullanıcı menüsü"
+        aria-expanded={open}
+      >
+        <Avatar name={user.fullName} size="lg" />
+        <ChevronDown className="size-4 text-muted" aria-hidden />
+      </button>
+      {open && (
+        <div className="absolute right-0 z-30 mt-2 w-60 overflow-hidden rounded-xl border border-border bg-surface shadow-xl">
+          <div className="border-b border-border px-4 py-3">
+            <p className="text-sm font-semibold text-text">{user.fullName}</p>
+            <p className="text-xs text-muted">
+              {roleLabel[user.role]}
+              {user.teamName ? ` · ${user.teamName}` : ""}
+            </p>
+          </div>
+          <button onClick={toggleTheme} className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm hover:bg-surface-2">
+            {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            {theme === "dark" ? "Açık tema" : "Koyu tema"}
+          </button>
+          <button
+            onClick={() => logout.mutate(undefined, { onSettled: () => navigate("/login") })}
+            className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-danger hover:bg-surface-2"
+          >
+            <LogOut className="size-4" /> Çıkış yap
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GlobalSearch() {
+  const navigate = useNavigate();
+  const [q, setQ] = useState("");
+  return (
+    <form
+      role="search"
+      className="relative hidden w-full max-w-sm md:block"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (q.trim()) navigate(`/tasks?q=${encodeURIComponent(q.trim())}`);
+      }}
+    >
+      <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted" aria-hidden />
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        maxLength={100}
+        placeholder="Görev ara…"
+        aria-label="Görev ara"
+        className="h-11 w-full rounded-xl border border-border bg-surface-2/60 pr-3 pl-10 text-sm text-text placeholder:text-muted focus:border-primary focus:bg-surface focus:outline-none"
+      />
+    </form>
+  );
+}
+
 export function Layout() {
   const { user, can } = useAuth();
   const [theme, toggleTheme] = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const logout = useLogout();
-  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const title = PAGE_TITLE.find(([re]) => re.test(pathname))?.[1] ?? "";
   const nav: NavItem[] = [
-    { to: "/", label: "Dashboard", icon: <LayoutDashboard className="size-4" /> },
-    { to: "/tasks", label: "Task'lar", icon: <ListChecks className="size-4" /> },
-    { to: "/projects", label: "Projeler", icon: <BriefcaseBusiness className="size-4" /> },
-    { to: "/events", label: "Etkinlikler", icon: <CalendarDays className="size-4" /> },
-    { to: "/competencies", label: "Yetkinlikler", icon: <Award className="size-4" /> },
-    { to: "/reports", label: "Raporlar", icon: <ChartColumn className="size-4" /> },
-    { to: "/announcements", label: "Duyurular", icon: <Megaphone className="size-4" /> },
-    { to: "/security", label: "Güvenlik & İzleme", icon: <ShieldAlert className="size-4" />, show: can.observe || can.audit },
-    { to: "/admin", label: "Kullanıcı & Ekip", icon: <Users className="size-4" />, show: can.direct },
-    { to: "/settings/tokens", label: "API & MCP", icon: <KeyRound className="size-4" /> },
+    { to: "/", label: "Genel Bakış", icon: <House className="size-5" /> },
+    { to: "/tasks", label: "Görevler", icon: <CalendarCheck className="size-5" /> },
+    { to: "/projects", label: "Projeler", icon: <BriefcaseBusiness className="size-5" /> },
+    { to: "/events", label: "Etkinlikler", icon: <CalendarDays className="size-5" /> },
+    { to: "/competencies", label: "Yetkinlikler", icon: <Award className="size-5" /> },
+    { to: "/reports", label: "Raporlar", icon: <ChartNoAxesColumn className="size-5" /> },
+    { to: "/announcements", label: "Duyurular", icon: <Megaphone className="size-5" /> },
+    { to: "/security", label: "Güvenlik & İzleme", icon: <ShieldAlert className="size-5" />, show: can.observe || can.audit },
+    { to: "/admin", label: "Organizasyon", icon: <Users className="size-5" />, show: can.direct },
   ];
+  const link = (n: NavItem, small = false) => (
+    <NavLink
+      to={n.to}
+      end={n.to === "/"}
+      onClick={() => setMobileOpen(false)}
+      className={({ isActive }) =>
+        cx(
+          "flex items-center gap-3.5 rounded-xl px-4 transition-colors",
+          small ? "py-2 text-sm" : "py-2.5 text-[15px]",
+          isActive ? "bg-accent font-semibold text-on-accent shadow-sm" : "hover:bg-sidebar-active hover:text-white",
+        )
+      }
+    >
+      {n.icon}
+      {n.label}
+    </NavLink>
+  );
   const sidebar = (
     <nav aria-label="Ana menü" className="flex h-full flex-col bg-sidebar text-sidebar-text">
-      <Link to="/" className="flex items-center gap-2 px-5 py-5 text-white" onClick={() => setMobileOpen(false)}>
-        <img src="/favicon.svg" alt="" className="size-8" />
-        <span className="text-[15px] font-semibold tracking-tight">Cyber Task Hub</span>
+      <Link to="/" className="flex items-center gap-3 px-6 pt-7 pb-8 text-white" onClick={() => setMobileOpen(false)}>
+        <Shield className="size-11 shrink-0 fill-sidebar stroke-accent" strokeWidth={2.4} aria-hidden />
+        <span className="text-xl leading-tight font-semibold tracking-tight">
+          Cyber
+          <br />
+          Task Hub
+        </span>
       </Link>
-      <ul className="flex-1 space-y-0.5 px-3">
+      <ul className="flex-1 space-y-1.5 overflow-y-auto px-3">
         {nav
           .filter((n) => n.show !== false)
           .map((n) => (
-            <li key={n.to}>
-              <NavLink
-                to={n.to}
-                end={n.to === "/"}
-                onClick={() => setMobileOpen(false)}
-                className={({ isActive }) =>
-                  cx(
-                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                    isActive ? "bg-sidebar-active font-medium text-white" : "hover:bg-sidebar-active hover:text-white",
-                  )
-                }
-              >
-                {n.icon}
-                {n.label}
-              </NavLink>
-            </li>
+            <li key={n.to}>{link(n)}</li>
           ))}
       </ul>
-      <div className="border-t border-white/10 px-5 py-4 text-xs">
-        <p className="text-white">{user.fullName}</p>
-        <p>
-          {roleLabel[user.role]}
-          {user.teamName ? ` · ${user.teamName}` : ""}
-        </p>
+      <div className="mx-4 border-t border-white/15 py-3">
+        {link({ to: "/settings/tokens", label: "API & MCP", icon: <Code className="size-5" /> }, true)}
+      </div>
+      <div className="mx-4 flex items-center gap-3 border-t border-white/15 py-4">
+        <Avatar name={user.fullName} size="lg" />
+        <div className="min-w-0 text-sm">
+          <p className="truncate font-medium text-white">{user.fullName}</p>
+          <p className="truncate text-xs">{roleLabel[user.role]}</p>
+        </div>
       </div>
     </nav>
   );
@@ -180,29 +287,20 @@ export function Layout() {
         </div>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-4 lg:px-8">
+        <header className="flex h-16 shrink-0 items-center gap-4 border-b border-border bg-surface px-4 lg:px-8">
           <button className="rounded-lg p-2 text-muted hover:bg-surface-2 lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Menüyü aç">
             <Menu className="size-5" />
           </button>
-          <div className="hidden text-sm text-muted sm:block">
-            {can.readOnly && <span className="rounded-full bg-warning-soft px-2.5 py-1 text-xs font-medium text-blocked">Salt okunur denetmen görünümü</span>}
-          </div>
-          <div className="ml-auto flex items-center gap-1">
-            <button onClick={toggleTheme} className="rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-text" aria-label={theme === "dark" ? "Açık temaya geç" : "Koyu temaya geç"}>
-              {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
-            </button>
+          <nav aria-label="Konum" className="hidden min-w-0 items-center gap-2 text-sm sm:flex">
+            <span className="text-muted">Çalışma Alanı</span>
+            <span className="text-muted" aria-hidden>/</span>
+            <span className="truncate font-semibold text-text" aria-current="page">{title}</span>
+          </nav>
+          {can.readOnly && <span className="hidden rounded-full bg-warning-soft px-2.5 py-1 text-xs font-medium text-blocked xl:inline">Salt okunur denetmen görünümü</span>}
+          <div className="ml-auto flex flex-1 items-center justify-end gap-2">
+            <GlobalSearch />
             <NotificationBell />
-            <div className="mx-2 hidden h-6 w-px bg-border sm:block" />
-            <Avatar name={user.fullName} />
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label="Çıkış yap"
-              onClick={() => logout.mutate(undefined, { onSettled: () => navigate("/login") })}
-            >
-              <LogOut className="size-4" />
-              <span className="hidden sm:inline">Çıkış</span>
-            </Button>
+            <UserMenu theme={theme} toggleTheme={toggleTheme} />
           </div>
         </header>
         <main className="min-w-0 flex-1 overflow-y-auto px-4 py-6 lg:px-8">

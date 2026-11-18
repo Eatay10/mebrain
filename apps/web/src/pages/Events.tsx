@@ -1,15 +1,20 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CalendarDays, Check, ExternalLink, MapPin, Plus, Users, X } from "lucide-react";
+import { Award, CalendarDays, Check, ExternalLink, ImagePlus, MapPin, Pencil, Plus, Trash2, Users, X } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import {
   errorMessage,
+  useCompetencyCatalog,
   useCreateEvent,
   useDecideParticipation,
+  useDeleteEventPhoto,
+  useEventPhotos,
   useEvents,
   useParticipations,
   useRequestParticipation,
+  useUpdateEvent,
+  useUploadEventPhoto,
   type Schemas,
 } from "../api/hooks";
 import { useAuth } from "../auth";
@@ -144,6 +149,17 @@ function EventDetailModal({ event, onClose }: { event: Schemas["Event"] | null; 
           <div><dt className="text-xs text-muted">Düzenleyen</dt><dd>{event.organizer ?? "—"}</dd></div>
         </dl>
         {event.description && <p className="text-sm whitespace-pre-wrap text-muted">{event.description}</p>}
+        {(event.competencies?.length ?? 0) > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            <Award className="size-4 text-primary" aria-hidden />
+            <span className="text-muted">Katılım tamamlanınca artan yetkinlikler:</span>
+            {event.competencies!.map((c) => (
+              <Badge key={c.competencyId} className="bg-success-soft text-done">{c.name} +{c.points}</Badge>
+            ))}
+          </div>
+        )}
+        <EventNotes event={event} />
+        <EventPhotos event={event} canUpload={!can.readOnly && (event.createdBy.id === user.id || can.direct || ["APPROVED", "ATTENDED"].includes(mine?.status ?? ""))} />
         {event.url && (
           <a href={event.url} target="_blank" rel="noopener noreferrer nofollow" className="inline-flex items-center gap-1 text-sm text-primary hover:underline">
             Etkinlik sayfası <ExternalLink className="size-3.5" />
@@ -216,6 +232,9 @@ const eventSchema = z
     organizer: z.string().max(150).optional(),
     url: z.string().max(500).regex(/^(https:\/\/.+)?$/, "Sadece https:// bağlantıları.").optional(),
     description: z.string().max(10000).optional(),
+    notes: z.string().max(10000).optional(),
+    competencyIds: z.array(z.string()).max(10),
+    competencyPoints: z.coerce.number().int().min(1).max(50),
   })
   .refine((v) => !v.startsAt || !v.endsAt || v.endsAt >= v.startsAt, { path: ["endsAt"], message: "Bitiş başlangıçtan önce olamaz." });
 type EventForm = z.infer<typeof eventSchema>;
@@ -224,10 +243,13 @@ function EventFormModal({ open, onClose }: { open: boolean; onClose: () => void 
   const { can } = useAuth();
   const toast = useToast();
   const create = useCreateEvent();
-  const { register, handleSubmit, reset, formState } = useForm<EventForm>({
-    resolver: zodResolver(eventSchema),
-    defaultValues: { type: "CONFERENCE", scope: "INDIVIDUAL" },
+  const catalog = useCompetencyCatalog();
+  const { register, handleSubmit, reset, formState, watch, setValue } = useForm<EventForm>({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(eventSchema) as any,
+    defaultValues: { type: "CONFERENCE", scope: "INDIVIDUAL", competencyIds: [], competencyPoints: 10 },
   });
+  const selected = watch("competencyIds") ?? [];
   const e = formState.errors;
   const submit = handleSubmit((v) =>
     create.mutate(
@@ -239,6 +261,9 @@ function EventFormModal({ open, onClose }: { open: boolean; onClose: () => void 
         location: v.location || undefined,
         organizer: v.organizer || undefined,
         description: v.description || undefined,
+        notes: v.notes || undefined,
+        competencyIds: v.competencyIds.length ? v.competencyIds : undefined,
+        competencyPoints: v.competencyIds.length ? v.competencyPoints : undefined,
       },
       { onSuccess: () => (toast("success", "Etkinlik oluşturuldu."), reset(), onClose()), onError: (err) => toast("error", errorMessage(err)) },
     ),
@@ -260,7 +285,154 @@ function EventFormModal({ open, onClose }: { open: boolean; onClose: () => void 
         <Field label="Düzenleyen" htmlFor="e-org"><Input id="e-org" {...register("organizer")} /></Field>
         <div className="sm:col-span-2"><Field label="Bağlantı" htmlFor="e-url" error={e.url?.message}><Input id="e-url" type="url" placeholder="https://" {...register("url")} /></Field></div>
         <div className="sm:col-span-2"><Field label="Açıklama" htmlFor="e-desc"><Textarea id="e-desc" {...register("description")} /></Field></div>
+        <div className="sm:col-span-2">
+          <Field label="Konferans notları / bilgiler" htmlFor="e-notes" hint="Konuşmalar, öğrenilenler, paylaşılacak kaynaklar. Sonradan da eklenebilir.">
+            <Textarea id="e-notes" {...register("notes")} />
+          </Field>
+        </div>
+        <fieldset className="sm:col-span-2">
+          <legend className="mb-1.5 text-sm font-medium text-text">Tamamlanınca artacak yetkinlikler</legend>
+          <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto">
+            {(catalog.data ?? []).map((c) => {
+              const on = selected.includes(c.id);
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setValue("competencyIds", on ? selected.filter((x) => x !== c.id) : [...selected, c.id])}
+                  className={on ? "rounded-full bg-primary px-2.5 py-1 text-xs text-on-primary" : "rounded-full bg-surface-2 px-2.5 py-1 text-xs text-text hover:bg-primary-soft"}
+                >
+                  {c.name}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+        {selected.length > 0 && (
+          <Field label="Yetkinlik başına puan" htmlFor="e-points" hint="Katılımcı 'Katıldı' olarak işaretlenince eklenir (en fazla %100).">
+            <Input id="e-points" type="number" min={1} max={50} {...register("competencyPoints")} />
+          </Field>
+        )}
       </form>
     </Modal>
+  );
+}
+
+function EventNotes({ event }: { event: Schemas["Event"] }) {
+  const { user, can } = useAuth();
+  const toast = useToast();
+  const update = useUpdateEvent(event.id);
+  const [editing, setEditing] = useState(false);
+  const [notes, setNotes] = useState(event.notes ?? "");
+  const canEdit = !can.readOnly && (event.createdBy.id === user.id || can.direct);
+  if (!event.notes && !canEdit) return null;
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="mb-1 flex items-center gap-2">
+        <h3 className="text-sm font-semibold">Konferans notları</h3>
+        {canEdit && !editing && (
+          <Button size="sm" variant="ghost" className="ml-auto" aria-label="Notları düzenle" onClick={() => (setNotes(event.notes ?? ""), setEditing(true))}>
+            <Pencil className="size-4" />
+          </Button>
+        )}
+      </div>
+      {editing ? (
+        <div className="space-y-2">
+          <label htmlFor="ev-notes" className="sr-only">Konferans notları</label>
+          <Textarea id="ev-notes" value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={10000} />
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setEditing(false)}>Vazgeç</Button>
+            <Button
+              size="sm"
+              loading={update.isPending}
+              onClick={() =>
+                update.mutate(
+                  { notes: notes.trim() || null },
+                  { onSuccess: () => (setEditing(false), toast("success", "Notlar kaydedildi.")), onError: (e) => toast("error", errorMessage(e)) },
+                )
+              }
+            >
+              Kaydet
+            </Button>
+          </div>
+        </div>
+      ) : event.notes ? (
+        <p className="text-sm whitespace-pre-wrap text-text">{event.notes}</p>
+      ) : (
+        <p className="text-xs text-muted">Henüz not eklenmedi.</p>
+      )}
+    </div>
+  );
+}
+
+function EventPhotos({ event, canUpload }: { event: Schemas["Event"]; canUpload: boolean }) {
+  const { user, can } = useAuth();
+  const toast = useToast();
+  const photos = useEventPhotos(event.id);
+  const upload = useUploadEventPhoto(event.id);
+  const del = useDeleteEventPhoto(event.id);
+  const [caption, setCaption] = useState("");
+  const [zoom, setZoom] = useState<Schemas["EventPhoto"] | null>(null);
+  const items = photos.data ?? [];
+  if (!canUpload && items.length === 0) return null;
+  return (
+    <div>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <h3 className="text-sm font-semibold">Fotoğraflar ({items.length})</h3>
+        {canUpload && (
+          <div className="ml-auto flex items-center gap-2">
+            <label htmlFor="ph-caption" className="sr-only">Fotoğraf açıklaması</label>
+            <Input id="ph-caption" value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Açıklama (isteğe bağlı)" maxLength={300} className="h-8 w-48 text-xs" />
+            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-medium hover:bg-primary-soft">
+              <ImagePlus className="size-4" /> {upload.isPending ? "Yükleniyor…" : "Fotoğraf ekle"}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="sr-only"
+                aria-label="Fotoğraf ekle"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (!f) return;
+                  if (f.size > 10 * 1024 * 1024) return toast("error", "Fotoğraf en fazla 10 MB olabilir.");
+                  upload.mutate(
+                    { file: f, caption: caption.trim() || undefined },
+                    { onSuccess: () => (setCaption(""), toast("success", "Fotoğraf yüklendi.")), onError: (err) => toast("error", errorMessage(err)) },
+                  );
+                }}
+              />
+            </label>
+          </div>
+        )}
+      </div>
+      {items.length > 0 && (
+        <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {items.map((ph) => (
+            <li key={ph.id} className="group relative overflow-hidden rounded-lg border border-border bg-surface-2">
+              <button className="block w-full" onClick={() => setZoom(ph)} aria-label={ph.caption ?? "Fotoğrafı büyüt"}>
+                <img src={`/api/v1/event-photos/${ph.id}`} alt={ph.caption ?? `${event.title} fotoğrafı`} className="aspect-square w-full object-cover" loading="lazy" />
+              </button>
+              {ph.caption && <p className="truncate px-2 py-1 text-xs text-muted">{ph.caption}</p>}
+              {!can.readOnly && (ph.uploadedBy.id === user.id || event.createdBy.id === user.id || can.direct) && (
+                <button
+                  className="absolute top-1 right-1 rounded-md bg-surface/90 p-1 text-muted opacity-0 group-hover:opacity-100 hover:text-danger focus:opacity-100"
+                  aria-label="Fotoğrafı sil"
+                  onClick={() => confirm("Fotoğraf silinsin mi?") && del.mutate(ph.id, { onError: (err) => toast("error", errorMessage(err)) })}
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {zoom && (
+        <Modal open onClose={() => setZoom(null)} title={zoom.caption ?? event.title} wide>
+          <img src={`/api/v1/event-photos/${zoom.id}`} alt={zoom.caption ?? event.title} className="max-h-[70vh] w-full rounded-lg object-contain" />
+          <p className="mt-2 text-xs text-muted">{zoom.uploadedBy.fullName} · {fmtDateTime(zoom.createdAt)}</p>
+        </Modal>
+      )}
+    </div>
   );
 }

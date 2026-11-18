@@ -26,6 +26,7 @@ from app.contract import (
     ProjectStatus,
     Recurrence,
     Role,
+    StakeholderRole,
     TaskCategory,
     TaskPriority,
     TaskStatus,
@@ -33,13 +34,20 @@ from app.contract import (
 )
 from app.models import (
     Announcement,
+    Certification,
     Competency,
+    CompetencyScoreLog,
     Event,
+    EventCompetency,
     EventParticipation,
     Project,
+    ProjectStakeholder,
     Task,
     TaskComment,
+    TaskProgressEntry,
+    TaskWatcher,
     Team,
+    Unit,
     User,
     UserCompetency,
 )
@@ -119,17 +127,59 @@ LAST = [
     "Tekin",
 ]
 
+# Ekip anahtarı → (ad, açıklama, üye sayısı). İlk dört ekip eski demo hesaplarını korur
+# (manager.soc, analyst.soc1 …); diğerleri birim yapısıyla eklendi.
 TEAMS = {
     "soc": ("SOC", "Güvenlik Operasyon Merkezi — 7/24 izleme ve olay müdahale", 12),
     "pentest": ("Pentest", "Sızma testleri ve kırmızı takım çalışmaları", 9),
     "grc": ("GRC", "Yönetişim, risk ve uyum", 7),
     "vuln": ("Zafiyet Yönetimi", "Zafiyet tarama, önceliklendirme ve takip", 10),
+    "iamops": ("IAM Operasyon", "Kullanıcı yaşam döngüsü, rol ve yetki yönetimi", 5),
+    "pam": ("Ayrıcalıklı Erişim Yönetimi", "PAM kasası, oturum kaydı ve ayrıcalıklı hesap denetimi", 4),
+    "csirt": ("Olay Müdahale (CSIRT)", "Ciddi olaylarda müdahale, adli inceleme ve kriz yönetimi", 5),
+    "cti": ("Tehdit İstihbaratı", "Tehdit aktörü takibi, IOC üretimi ve istihbarat raporları", 4),
+    "netsec": ("Ağ ve Çevre Güvenliği", "Firewall, IPS, WAF ve VPN cihazlarının yönetimi", 6),
+    "endpoint": ("Uç Nokta Güvenliği", "EDR, antivirüs ve cihaz sıkılaştırma", 5),
+    "datasec": ("Veri Güvenliği ve DLP", "Veri sınıflandırma, DLP ve şifreleme", 4),
+    "awareness": ("Güvenlik Farkındalığı", "Eğitimler, oltalama simülasyonları ve iletişim", 3),
+    "strategy": ("Strateji ve Program Yönetimi", "Güvenlik yol haritası, bütçe ve program takibi", 3),
+    "metrics": ("Güvenlik Metrikleri ve Raporlama", "KPI/KRI takibi ve yönetim raporları", 3),
+    "arch": ("Güvenlik Mimarisi", "Mimari incelemeler, tasarım standartları ve bulut mimarisi", 4),
+    "appsec": ("Uygulama Güvenliği (AppSec)", "Güvenli SDLC, kod incelemesi ve SAST/DAST", 5),
+    "redteam": ("Kırmızı Takım", "Senaryo bazlı saldırı simülasyonları", 4),
+    "tprm": ("Üçüncü Taraf Risk Yönetimi", "Tedarikçi güvenlik değerlendirmeleri", 3),
+    "asm": ("Saldırı Yüzeyi Yönetimi", "Dış varlık keşfi ve maruziyet takibi", 4),
 }
+# Ekibin iş profili: task şablonları, ünvan ve yetkinlik seti buradan seçilir.
+PROFILE = {
+    "soc": "soc", "pentest": "pentest", "grc": "grc", "vuln": "vuln",
+    "iamops": "iam", "pam": "iam", "csirt": "soc", "cti": "soc", "netsec": "netsec", "endpoint": "netsec",
+    "datasec": "grc", "awareness": "strategy", "strategy": "strategy", "metrics": "strategy",
+    "arch": "appsec", "appsec": "appsec", "redteam": "pentest", "tprm": "grc", "asm": "vuln",
+}  # fmt: skip
+# Çalışan e-posta öneki (analyst.<önek><n>@demo.local)
+EMAIL_PREFIX = {"soc": "soc", "pentest": "pentest", "grc": "grc", "vuln": "vuln"}
+TASK_COUNT = {"soc": 190, "pentest": 140, "grc": 100, "vuln": 170}  # diğerleri: üye sayısı × 14
 TITLES = {
     "soc": "SOC Analisti",
     "pentest": "Sızma Testi Uzmanı",
     "grc": "GRC Uzmanı",
     "vuln": "Zafiyet Analisti",
+    "iamops": "IAM Uzmanı",
+    "pam": "PAM Uzmanı",
+    "csirt": "Olay Müdahale Uzmanı",
+    "cti": "Tehdit İstihbaratı Analisti",
+    "netsec": "Ağ Güvenliği Uzmanı",
+    "endpoint": "Uç Nokta Güvenliği Uzmanı",
+    "datasec": "Veri Güvenliği Uzmanı",
+    "awareness": "Farkındalık Uzmanı",
+    "strategy": "Güvenlik Program Uzmanı",
+    "metrics": "Güvenlik Raporlama Uzmanı",
+    "arch": "Güvenlik Mimarı",
+    "appsec": "Uygulama Güvenliği Uzmanı",
+    "redteam": "Kırmızı Takım Uzmanı",
+    "tprm": "Tedarikçi Risk Uzmanı",
+    "asm": "Saldırı Yüzeyi Analisti",
 }
 
 TASK_TEMPLATES: dict[str, list[tuple[str, TaskCategory]]] = {
@@ -168,6 +218,40 @@ TASK_TEMPLATES: dict[str, list[tuple[str, TaskCategory]]] = {
         ("Konteyner imaj taraması: {app}", TaskCategory.VULNERABILITY_MANAGEMENT),
     ],
 }
+TASK_TEMPLATES |= {
+    "iam": [
+        ("Yeni işe giriş erişim talebi: {app}", TaskCategory.OPERATIONS),
+        ("Ayrılan personel hesaplarını kapat", TaskCategory.OPERATIONS),
+        ("Rol bazlı yetki matrisi gözden geçirmesi: {app}", TaskCategory.COMPLIANCE),
+        ("Ayrıcalıklı hesap envanterini güncelle", TaskCategory.COMPLIANCE),
+        ("MFA kapsamını genişlet: {app}", TaskCategory.OPERATIONS),
+        ("PAM oturum kayıtlarını incele #{n}", TaskCategory.MONITORING),
+    ],
+    "netsec": [
+        ("Firewall kural talebi #{n}", TaskCategory.OPERATIONS),
+        ("Kullanılmayan firewall kurallarını temizle: {host}", TaskCategory.OPERATIONS),
+        ("IPS imza güncellemesini doğrula", TaskCategory.MONITORING),
+        ("WAF istisna talebini değerlendir: {app}", TaskCategory.OPERATIONS),
+        ("EDR ajanı eksik cihazları tespit et", TaskCategory.MONITORING),
+        ("Cihaz sıkılaştırma kontrolü: {host}", TaskCategory.VULNERABILITY_MANAGEMENT),
+    ],
+    "appsec": [
+        ("Mimari güvenlik incelemesi: {app}", TaskCategory.OTHER),
+        ("SAST bulgularını önceliklendir: {app}", TaskCategory.VULNERABILITY_MANAGEMENT),
+        ("Güvenli kod incelemesi: {app}", TaskCategory.OTHER),
+        ("Tehdit modellemesi oturumu: {app}", TaskCategory.OTHER),
+        ("Bağımlılık zafiyetlerini takip et: {app}", TaskCategory.VULNERABILITY_MANAGEMENT),
+        ("Geliştirici güvenlik eğitimi hazırla", TaskCategory.AWARENESS),
+    ],
+    "strategy": [
+        ("Çeyreklik güvenlik KPI raporunu hazırla", TaskCategory.OPERATIONS),
+        ("Yönetim kurulu sunumu taslağı", TaskCategory.OPERATIONS),
+        ("Güvenlik bütçe takibi #{n}", TaskCategory.OPERATIONS),
+        ("Oltalama simülasyonu sonuçlarını analiz et", TaskCategory.AWARENESS),
+        ("Farkındalık bülteni hazırla", TaskCategory.AWARENESS),
+        ("Yol haritası kilometre taşlarını güncelle", TaskCategory.OPERATIONS),
+    ],
+}
 FILL = {
     "host": ["SRV-WEB-01", "SRV-DB-03", "WS-1042", "WS-2210", "SRV-APP-07", "FW-EDGE-02"],
     "rule": ["Brute force", "Lateral movement", "DNS tünelleme", "Yetki yükseltme"],
@@ -196,6 +280,20 @@ PROJECTS = {
         "Yama Yönetim Süreci İyileştirme",
     ],
 }
+PROJECTS |= {
+    "iamops": ["Kimlik Yönetişimi (IGA) Geçişi"],
+    "pam": ["PAM Kapsam Genişletme"],
+    "csirt": ["Olay Müdahale Playbook Kütüphanesi"],
+    "netsec": ["Firewall Kural Optimizasyonu", "SASE Pilotu"],
+    "endpoint": ["EDR Kapsam Tamamlama"],
+    "datasec": ["Veri Sınıflandırma Programı"],
+    "strategy": ["2027 Güvenlik Yol Haritası"],
+    "appsec": ["Güvenli SDLC Programı", "SAST/DAST Entegrasyonu"],
+    "arch": ["Sıfır Güven Mimarisi"],
+    "redteam": ["Yıllık Kırmızı Takım Tatbikatı"],
+    "tprm": ["Tedarikçi Risk Platformu"],
+    "asm": ["Dış Saldırı Yüzeyi Envanteri"],
+}
 COMPETENCIES = [
     ("Web Uygulama Güvenliği", CC.APPSEC),
     ("Sızma Testi", CC.OFFENSIVE),
@@ -213,12 +311,19 @@ COMPETENCIES = [
     ("Ağ Güvenliği", CC.NETWORK),
     ("Firewall / IPS", CC.NETWORK),
     ("Güvenli Kod İnceleme", CC.APPSEC),
+    ("Kimlik ve Erişim Yönetimi", CC.OTHER),
+    ("Güvenlik Mimarisi", CC.APPSEC),
+    ("Güvenlik Programı Yönetimi", CC.GRC),
 ]
 TEAM_COMPS = {
     "soc": [3, 4, 5, 6, 13, 14],
     "pentest": [0, 1, 2, 15, 13, 8],
     "grc": [10, 11, 12, 13],
     "vuln": [0, 8, 9, 13, 15, 11],
+    "iam": [16, 11, 8, 12],
+    "netsec": [13, 14, 3, 8],
+    "appsec": [0, 15, 17, 8, 9],
+    "strategy": [18, 11, 10, 12],
 }
 EVENTS = [
     ("Black Hat Europe 2026", EventType.CONFERENCE, EventScope.CORPORATE, "ExCeL London"),
@@ -241,6 +346,56 @@ EVENTS = [
     ("Güvenli Kodlama Bootcamp", EventType.TRAINING, EventScope.CORPORATE, "Eğitim Salonu"),
     ("Yapay Zekâ ve Güvenlik Paneli", EventType.MEETUP, EventScope.INDIVIDUAL, "Online"),
     ("Yıl Sonu Güvenlik Değerlendirme Toplantısı", EventType.OTHER, EventScope.CORPORATE, "Genel Müdürlük"),
+]
+
+
+# Direktörün altındaki birimler: anahtar → (birim adı, açıklama, ekipler). Açılımlar demo amaçlıdır.
+UNITS = {
+    "iam": ("TEAM-IAM", "Kimlik ve Erişim Yönetimi", ("iamops", "pam")),
+    "cdc": ("TEAM-CDC", "Siber Savunma Merkezi", ("soc", "csirt", "cti")),
+    "mss": ("TEAM-MSS", "Yönetilen Güvenlik Hizmetleri", ("netsec", "endpoint")),
+    "is": ("TEAM-IS", "Bilgi Güvenliği", ("datasec", "awareness")),
+    "s": ("TEAM-S", "Güvenlik Stratejisi ve Programı", ("strategy", "metrics")),
+    "saa": ("TEAM-SAA", "Güvenlik Mimarisi ve Uygulama Güvenliği", ("arch", "appsec")),
+    "os": ("TEAM-OS", "Ofansif Güvenlik", ("pentest", "redteam")),
+    "sm": ("TEAM-SM", "Güvenlik Yönetişimi, Risk ve Uyum", ("grc", "tprm")),
+    "sma": ("TEAM-SMA", "Zafiyet ve Saldırı Yüzeyi Yönetimi", ("vuln", "asm")),
+}
+# Etkinlik başlığındaki anahtar kelime → tamamlanınca puanı artan yetkinlikler
+EVENT_COMPS = {
+    "Black Hat": ["Sızma Testi", "Tehdit Avcılığı"],
+    "BSides": ["Web Uygulama Güvenliği", "Tehdit Avcılığı"],
+    "OSCP": ["Sızma Testi", "Kırmızı Takım"],
+    "CTF": ["Sızma Testi", "Web Uygulama Güvenliği"],
+    "Bulut": ["Bulut Güvenliği (AWS/Azure)"],
+    "Tehdit Avcılığı": ["Tehdit Avcılığı", "SIEM Yönetimi"],
+    "ISO 27001": ["ISO 27001", "Risk Yönetimi"],
+    "OWASP": ["Web Uygulama Güvenliği", "Güvenli Kod İnceleme"],
+    "Fidye": ["Olay Müdahale", "Dijital Adli Bilişim"],
+    "FOR508": ["Dijital Adli Bilişim", "Olay Müdahale"],
+    "Kubernetes": ["Kubernetes Güvenliği", "Bulut Güvenliği (AWS/Azure)"],
+    "KVKK": ["KVKK / Veri Koruma"],
+    "Zararlı Yazılım": ["Zararlı Yazılım Analizi"],
+    "Red Team": ["Kırmızı Takım"],
+    "Güvenli Kodlama": ["Güvenli Kod İnceleme", "Web Uygulama Güvenliği"],
+}
+CERTS = [
+    ("OSCP", "OffSec", ["Sızma Testi", "Kırmızı Takım"]),
+    ("CISSP", "ISC2", ["Risk Yönetimi", "ISO 27001"]),
+    ("CEH", "EC-Council", ["Sızma Testi", "Web Uygulama Güvenliği"]),
+    ("GCFA", "GIAC", ["Dijital Adli Bilişim", "Zararlı Yazılım Analizi"]),
+    ("GCIH", "GIAC", ["Olay Müdahale", "Tehdit Avcılığı"]),
+    ("AWS Certified Security – Specialty", "AWS", ["Bulut Güvenliği (AWS/Azure)"]),
+    ("CCNP Security", "Cisco", ["Firewall / IPS", "Ağ Güvenliği"]),
+    ("ISO 27001 Lead Auditor", "PECB", ["ISO 27001"]),
+]
+PROGRESS_NOTES = [
+    "Kapsam netleştirildi.",
+    "Test ortamı doğrulandı.",
+    "İlk bulgular raporlandı.",
+    "Sistem sahibiyle toplantı yapıldı.",
+    "Analiz büyük ölçüde tamamlandı.",
+    "Düzeltmeler doğrulanıyor.",
 ]
 
 
@@ -273,6 +428,25 @@ def _user(db: Session, email: str, name: str, role: Role, team: Team | None, tit
     return u
 
 
+def _gain(db: Session, user_id: Any, competency_id: Any, points: int, source: str, source_id: Any) -> None:
+    uc = db.get(UserCompetency, (user_id, competency_id))
+    if uc is None:
+        uc = UserCompetency(user_id=user_id, competency_id=competency_id, level=1, score=0)
+        db.add(uc)
+    uc.score = min(100, (uc.score or 0) + points)
+    uc.level = max(uc.level, min(5, (uc.score + 19) // 20))
+    db.add(
+        CompetencyScoreLog(
+            user_id=user_id,
+            competency_id=competency_id,
+            source_type=source,
+            source_id=source_id,
+            points=points,
+        )
+    )
+    db.flush()
+
+
 def _task_times(status: TaskStatus, created: datetime) -> tuple[datetime | None, datetime | None]:
     if status == TaskStatus.TODO:
         return None, None
@@ -286,7 +460,11 @@ def _task_times(status: TaskStatus, created: datetime) -> tuple[datetime | None,
 
 def seed(db: Session, pw_hash: str) -> dict[str, Any]:
     used: set[str] = set()
-    teams = {k: Team(name=v[0], description=v[1]) for k, v in TEAMS.items()}
+    units = {k: Unit(name=v[0], description=v[1]) for k, v in UNITS.items()}
+    db.add_all(units.values())
+    db.flush()
+    unit_of = {team_key: k for k, v in UNITS.items() for team_key in v[2]}
+    teams = {k: Team(name=v[0], description=v[1], unit_id=units[unit_of[k]].id) for k, v in TEAMS.items()}
     db.add_all(teams.values())
     db.flush()
 
@@ -294,6 +472,19 @@ def seed(db: Session, pw_hash: str) -> dict[str, Any]:
         db, "director@demo.local", "Deniz Aksoy", Role.DIRECTOR, None, "Siber Güvenlik Direktörü", pw_hash
     )
     auditor = _user(db, "auditor@demo.local", "Selin Tekin", Role.AUDITOR, None, "İç Denetçi", pw_hash)
+    used |= {director.full_name, auditor.full_name}
+    unit_managers = {
+        k: _user(
+            db,
+            f"unit.{k}@demo.local",
+            _name(used),
+            Role.UNIT_MANAGER,
+            None,
+            f"{name} Birim Yöneticisi",
+            pw_hash,
+        )
+        for k, (name, _, _) in UNITS.items()
+    }
     managers = {
         "soc": _user(
             db,
@@ -317,21 +508,29 @@ def seed(db: Session, pw_hash: str) -> dict[str, Any]:
             db, "manager.grc@demo.local", "Murat Koç", Role.MANAGER, teams["grc"], "GRC Yöneticisi", pw_hash
         ),
     }
-    used |= {director.full_name, auditor.full_name, *(m.full_name for m in managers.values())}
+    used |= {m.full_name for m in managers.values()}
+    for key, (team_name, _, _) in TEAMS.items():  # yeni ekiplerin kendi ekip yöneticisi var
+        if key not in managers and key != "vuln":
+            managers[key] = _user(
+                db,
+                f"manager.{key}@demo.local",
+                _name(used),
+                Role.MANAGER,
+                teams[key],
+                f"{team_name} Ekip Yöneticisi",
+                pw_hash,
+            )
     db.flush()
-    teams["soc"].manager_id = managers["soc"].id
+    for k, um in unit_managers.items():
+        units[k].manager_id = um.id
+    for key, mgr in managers.items():
+        teams[key].manager_id = mgr.id
     teams["vuln"].manager_id = managers["soc"].id  # SOC yöneticisi Zafiyet Yönetimi'ni de yönetir
-    teams["pentest"].manager_id = managers["pentest"].id
-    teams["grc"].manager_id = managers["grc"].id
+    managers["vuln"] = managers["soc"]
 
     members: dict[str, list[User]] = {}
     for key, (_, _, size) in TEAMS.items():
-        prefix = {
-            "soc": "analyst.soc",
-            "pentest": "analyst.pentest",
-            "grc": "analyst.grc",
-            "vuln": "analyst.vuln",
-        }[key]
+        prefix = f"analyst.{EMAIL_PREFIX.get(key, key)}"
         members[key] = [
             _user(db, f"{prefix}{i}@demo.local", _name(used), Role.EMPLOYEE, teams[key], TITLES[key], pw_hash)
             for i in range(1, size + 1)
@@ -344,22 +543,24 @@ def seed(db: Session, pw_hash: str) -> dict[str, Any]:
     db.flush()
     for key, users in members.items():
         for u in users:
-            for idx in RNG.sample(TEAM_COMPS[key], k=min(len(TEAM_COMPS[key]), RNG.randint(3, 5))):
+            pool = TEAM_COMPS[PROFILE[key]]
+            for idx in RNG.sample(pool, k=min(len(pool), RNG.randint(3, 5))):
                 verified = RNG.random() < 0.5
                 db.add(
                     UserCompetency(
                         user_id=u.id,
                         competency_id=comps[idx].id,
-                        level=RNG.randint(1, 5),
+                        level=(lvl := RNG.randint(1, 5)),
+                        score=max(5, lvl * 20 - RNG.randint(0, 15)),
                         evidence=RNG.choice([None, "Eğitim sertifikası", "OSCP", "CEH", "Proje deneyimi"]),
-                        verified_by=managers.get(key, managers["soc"]).id if verified else None,
+                        verified_by=managers[key].id if verified else None,
                         verified_at=NOW - timedelta(days=RNG.randint(1, 60)) if verified else None,
                     )
                 )
 
     projects: dict[str, list[Project]] = {}
     for key, names in PROJECTS.items():
-        owner_mgr = managers.get(key, managers["soc"])
+        owner_mgr = managers[key]
         projects[key] = []
         for name in names:
             start = TODAY - timedelta(days=RNG.randint(20, 120))
@@ -385,12 +586,13 @@ def seed(db: Session, pw_hash: str) -> dict[str, Any]:
     tasks: list[Task] = []
     for key, users in members.items():
         active = [u for u in users if u.is_active]
-        mgr = managers.get(key, managers["soc"])
-        n_tasks = {"soc": 190, "pentest": 140, "grc": 100, "vuln": 170}[key]
+        mgr = managers[key]
+        n_tasks = TASK_COUNT.get(key, len(users) * 14)
+        team_projects = projects.get(key, [])
         for _ in range(n_tasks):
-            tpl, cat = RNG.choice(TASK_TEMPLATES[key])
-            is_project = RNG.random() < 0.4 and projects[key]
-            project = RNG.choice(projects[key]) if is_project else None
+            tpl, cat = RNG.choice(TASK_TEMPLATES[PROFILE[key]])
+            is_project = RNG.random() < 0.4 and team_projects
+            project = RNG.choice(team_projects) if is_project else None
             status = RNG.choices(statuses, weights)[0]
             created = NOW - timedelta(days=RNG.randint(0, 90), hours=RNG.randint(0, 23))
             started, completed = _task_times(status, created)
@@ -402,8 +604,18 @@ def seed(db: Session, pw_hash: str) -> dict[str, Any]:
                 offset = RNG.randint(-12, -1) if RNG.random() < 0.15 else RNG.randint(0, 35)
                 due = TODAY + timedelta(days=offset)
             due = due if RNG.random() < 0.92 else None
+            progress = {
+                TaskStatus.TODO: 0,
+                TaskStatus.IN_PROGRESS: RNG.randrange(10, 90, 5),
+                TaskStatus.BLOCKED: RNG.randrange(10, 65, 5),
+                TaskStatus.DONE: 100,
+            }[status]
+            um = unit_managers[unit_of[key]]
+            requester = RNG.choices([mgr, um, director, assignee], [0.55, 0.2, 0.1, 0.15])[0]
             t = Task(
                 type=TaskType.PROJECT if project else TaskType.STANDARD,
+                progress=progress,
+                requester_id=requester.id,
                 project_id=project.id if project else None,
                 team_id=teams[key].id,
                 title=_fill(tpl),
@@ -425,6 +637,9 @@ def seed(db: Session, pw_hash: str) -> dict[str, Any]:
             )
             db.add(t)
             tasks.append(t)
+            pool = [u for u in active if u.id not in (assignee.id, backup.id if backup else None)]
+            if pool and RNG.random() < 0.25:
+                t.collaborators = RNG.sample(pool, k=min(len(pool), RNG.randint(1, 2)))
     # Rutin (tekrarlayan) şablonlar — worker günlük örnek üretir.
     for key, title, rec, cat in [
         ("soc", "Günlük SIEM alarm gözden geçirmesi", Recurrence.DAILY, TaskCategory.MONITORING),
@@ -433,7 +648,7 @@ def seed(db: Session, pw_hash: str) -> dict[str, Any]:
         ("grc", "Aylık erişim yetkisi gözden geçirmesi", Recurrence.MONTHLY, TaskCategory.COMPLIANCE),
         ("pentest", "Haftalık bulgu durum toplantısı", Recurrence.WEEKLY, TaskCategory.OPERATIONS),
     ]:
-        mgr = managers.get(key, managers["soc"])
+        mgr = managers[key]
         active = [u for u in members[key] if u.is_active]
         db.add(
             Task(
@@ -449,6 +664,73 @@ def seed(db: Session, pw_hash: str) -> dict[str, Any]:
                 created_at=NOW - timedelta(days=30),
             )
         )
+    db.flush()
+
+    for t in tasks:
+        if t.backup_assignee_id:
+            db.add(TaskWatcher(task_id=t.id, user_id=t.backup_assignee_id, created_at=t.created_at))
+        if t.progress == 0:
+            continue
+        steps = sorted(
+            RNG.sample(range(5, t.progress, 5), k=min(RNG.randint(0, 2), max(0, t.progress // 5 - 1)))
+        )
+        values = [*steps, t.progress]
+        prev = 0
+        for i, v in enumerate(values):
+            db.add(
+                TaskProgressEntry(
+                    task_id=t.id,
+                    author_id=t.assignee_id or t.created_by,
+                    from_progress=prev,
+                    to_progress=v,
+                    note="Task tamamlandı." if v == 100 else RNG.choice(PROGRESS_NOTES),
+                    created_at=(t.started_at or t.created_at) + timedelta(hours=6 * (i + 1)),
+                )
+            )
+            prev = v
+    for mgr in {m.id: m for m in managers.values()}.values():  # yöneticiler bazı task'lara yıldız koyar
+        own = [t for t in tasks if t.created_by == mgr.id and t.status != TaskStatus.DONE]
+        for t in RNG.sample(own, k=min(len(own), 6)):
+            db.add(TaskWatcher(task_id=t.id, user_id=mgr.id, created_at=NOW - timedelta(days=2)))
+
+    # Hiyerarşik atamalar: direktör → unit yöneticisi, unit yöneticisi → ekip yöneticisi
+    for k, um in unit_managers.items():
+        first_team = teams[UNITS[k][2][0]]
+        tasks.append(
+            Task(
+                type=TaskType.STANDARD,
+                team_id=first_team.id,
+                title=f"{UNITS[k][0]} çeyreklik hedeflerinin belirlenmesi",
+                category=TaskCategory.OPERATIONS,
+                priority=TaskPriority.HIGH,
+                status=TaskStatus.IN_PROGRESS,
+                progress=40,
+                assignee_id=um.id,
+                requester_id=director.id,
+                created_by=director.id,
+                due_date=TODAY + timedelta(days=21),
+                created_at=NOW - timedelta(days=10),
+                started_at=NOW - timedelta(days=9),
+            )
+        )
+        for team_key in UNITS[k][2]:
+            mgr = managers[team_key]
+            tasks.append(
+                Task(
+                    type=TaskType.STANDARD,
+                    team_id=teams[team_key].id,
+                    title=f"{teams[team_key].name} kapasite planı",
+                    category=TaskCategory.OPERATIONS,
+                    priority=TaskPriority.MEDIUM,
+                    status=TaskStatus.TODO,
+                    assignee_id=mgr.id,
+                    requester_id=um.id,
+                    created_by=um.id,
+                    due_date=TODAY + timedelta(days=14),
+                    created_at=NOW - timedelta(days=5),
+                )
+            )
+        db.add_all(tasks[-(1 + len(UNITS[k][2])) :])
     db.flush()
 
     phrases = [
@@ -470,7 +752,9 @@ def seed(db: Session, pw_hash: str) -> dict[str, Any]:
                 )
             )
 
-    everyone = [u for users in members.values() for u in users if u.is_active] + list(managers.values())
+    everyone = [u for users in members.values() for u in users if u.is_active] + list(
+        {m.id: m for m in managers.values()}.values()
+    )
     for i, (title, etype, scope, loc) in enumerate(EVENTS):
         start = NOW + timedelta(days=RNG.randint(-60, 75), hours=RNG.randint(8, 16) - NOW.hour)
         ev = Event(
@@ -485,6 +769,16 @@ def seed(db: Session, pw_hash: str) -> dict[str, Any]:
             created_by=director.id if scope == EventScope.CORPORATE else RNG.choice(everyone).id,
             description=f"{title} hakkında bilgilendirme.",
         )
+        comp_by_name = {cp.name: cp for cp in comps}
+        linked = next((v for key_word, v in EVENT_COMPS.items() if key_word in title), [])
+        points = RNG.choice([10, 15, 20])
+        ev.competency_links = [
+            EventCompetency(competency_id=comp_by_name[n].id, points=points) for n in linked
+        ]
+        if ev.ends_at < NOW:
+            ev.notes = (
+                "Öne çıkanlar: yeni saldırı teknikleri, savunma pratikleri ve ekip için uygulanabilir notlar."
+            )
         db.add(ev)
         db.flush()
         for u in RNG.sample(everyone, RNG.randint(2, 7)):
@@ -501,11 +795,7 @@ def seed(db: Session, pw_hash: str) -> dict[str, Any]:
             decider = (
                 None
                 if st == ParticipationStatus.REQUESTED
-                else (
-                    managers.get(
-                        next((k for k, t in teams.items() if t.id == u.team_id), "soc"), managers["soc"]
-                    ).id
-                )
+                else (managers[next((k for k, t in teams.items() if t.id == u.team_id), "soc")].id)
             )
             db.add(
                 EventParticipation(
@@ -517,7 +807,47 @@ def seed(db: Session, pw_hash: str) -> dict[str, Any]:
                     role=RNG.choices(list(ParticipationRole), [0.8, 0.1, 0.05, 0.05])[0],
                 )
             )
+            if st == ParticipationStatus.ATTENDED:
+                for link in ev.competency_links:
+                    _gain(db, u.id, link.competency_id, link.points, "EVENT", ev.id)
         _ = i
+
+    comp_by_name = {cp.name: cp for cp in comps}
+    for u in [x for users in members.values() for x in users if x.is_active]:
+        if RNG.random() < 0.35:
+            name, issuer, comp_names = RNG.choice(CERTS)
+            cert = Certification(
+                user_id=u.id,
+                name=name,
+                issuer=issuer,
+                issued_on=TODAY - timedelta(days=RNG.randint(30, 900)),
+                created_by=u.id,
+            )
+            db.add(cert)
+            db.flush()
+            for n in comp_names:
+                _gain(db, u.id, comp_by_name[n].id, 15, "CERTIFICATION", cert.id)
+
+    for key, plist in projects.items():
+        for p in plist:
+            db.add(ProjectStakeholder(project_id=p.id, user_id=director.id, role=StakeholderRole.SPONSOR))
+            db.add(
+                ProjectStakeholder(
+                    project_id=p.id,
+                    user_id=unit_managers[unit_of[key]].id,
+                    role=StakeholderRole.STAKEHOLDER,
+                )
+            )
+            db.add(
+                ProjectStakeholder(
+                    project_id=p.id,
+                    name="BT Altyapı Müdürlüğü",
+                    organization="Bilgi Teknolojileri",
+                    role=StakeholderRole.STAKEHOLDER,
+                    note="Sistem sahibi; değişiklik onayları",
+                )
+            )
+    db.flush()
     db.add_all(
         [
             Announcement(
@@ -549,7 +879,8 @@ def seed(db: Session, pw_hash: str) -> dict[str, Any]:
     db.flush()
     return {
         "teams": len(teams),
-        "users": len(everyone) + 3,
+        "users": len(everyone) + 3 + len(unit_managers),
+        "units": len(units),
         "tasks": len(tasks),
         "projects": sum(len(v) for v in projects.values()),
         "events": len(EVENTS),
@@ -557,6 +888,17 @@ def seed(db: Session, pw_hash: str) -> dict[str, Any]:
 
 
 TABLES = [
+    "competency_score_logs",
+    "certifications",
+    "event_photos",
+    "event_competencies",
+    "project_stakeholders",
+    "attachments",
+    "task_progress_entries",
+    "task_watchers",
+    "project_watchers",
+    "task_collaborators",
+    "report_schedules",
     "notifications",
     "announcements",
     "user_competencies",
@@ -573,6 +915,7 @@ TABLES = [
     "job_runs",
     "users",
     "teams",
+    "units",
 ]
 
 
@@ -587,6 +930,7 @@ def main() -> None:
     with Session(engine) as db:
         if args.reset:
             db.execute(text("UPDATE teams SET manager_id = NULL"))
+            db.execute(text("UPDATE units SET manager_id = NULL"))
             db.execute(text(f"TRUNCATE {', '.join(TABLES)} RESTART IDENTITY CASCADE"))
             db.commit()
         if db.scalar(select(User.id).limit(1)):

@@ -11,11 +11,12 @@ from app import contract as c
 from app.audit.service import record
 from app.auth.scope import in_scope, team_filter, visible_team_ids
 from app.core.errors import BadRequest, NotFound
-from app.models import Project, Task, Team, User
+from app.models import Project, Task, Team, Unit, User
 from app.modules.tasks import counting
 from app.security_events.service import emit
 
 GROUP_COLUMNS: dict[str, Any] = {
+    "unit": select(Team.unit_id).where(Team.id == Task.team_id).scalar_subquery(),
     "team": Task.team_id,
     "assignee": Task.assignee_id,
     "project": Task.project_id,
@@ -29,6 +30,8 @@ MAX_RANGE_DAYS = 366
 
 def _labels(db: Session, group_by: str, keys: list[Any]) -> dict[Any, str]:
     ids = [k for k in keys if k is not None]
+    if group_by == "unit":
+        return {u.id: u.name for u in db.scalars(select(Unit).where(Unit.id.in_(ids))).unique()}
     if group_by == "team":
         return {t.id: t.name for t in db.scalars(select(Team).where(Team.id.in_(ids))).unique()}
     if group_by == "assignee":
@@ -39,7 +42,14 @@ def _labels(db: Session, group_by: str, keys: list[Any]) -> dict[Any, str]:
 
 
 def build(
-    db: Session, user: User, group_by: str, frm: date, to: date, team_id: UUID | None, project_id: UUID | None
+    db: Session,
+    user: User,
+    group_by: str,
+    frm: date,
+    to: date,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    unit_id: UUID | None = None,
 ) -> c.TaskReport:
     if to < frm:
         raise BadRequest(errors=[{"field": "to", "message": "Bitiş başlangıçtan önce olamaz."}])
@@ -50,6 +60,11 @@ def build(
     scope = visible_team_ids(db, user)
     if team_id is not None and not in_scope(team_id, scope):
         raise NotFound("Ekip bulunamadı.")
+    if unit_id is not None:
+        unit_teams = set(db.scalars(select(Team.id).where(Team.unit_id == unit_id)))
+        scope = unit_teams if scope is None else unit_teams & scope
+        if not scope:
+            raise NotFound("Unit bulunamadı.")
     where = [
         team_filter(Task.team_id, scope),
         Task.created_at >= frm,
@@ -74,7 +89,7 @@ def build(
         (
             c.Row(
                 key=str(getattr(k[0], "value", k[0]) or "none"),
-                label=labels.get(k[0], "Atanmamış"),
+                label=labels.get(k[0], "Unit'e bağlı olmayan ekipler" if group_by == "unit" else "Atanmamış"),
                 counts=v,
                 avg_completion_hours=round(float(avg[k[0]]), 1) if avg.get(k[0]) is not None else None,
             )

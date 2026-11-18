@@ -34,6 +34,17 @@ def _client_ip(request: Request) -> str | None:
         return None
 
 
+_UPLOAD_PATHS = re.compile(r"^/api/v1/(tasks|events)/[0-9a-fA-F-]{36}/(attachments|photos)$")
+
+
+def _body_limit(request: Request) -> int:
+    """Dosya yükleme uçlarında daha büyük gövdeye izin verilir (multipart ek yükü için +64 KB)."""
+    s = get_settings()
+    if request.method == "POST" and _UPLOAD_PATHS.match(request.url.path):
+        return s.max_upload_bytes + 64 * 1024
+    return s.max_body_bytes
+
+
 def _rate_key(request: Request) -> tuple[str, int, str]:
     s = get_settings()
     ip = _client_ip(request) or "unknown"
@@ -65,7 +76,7 @@ def install_middleware(app: FastAPI) -> None:
 
         response: Response
         length = request.headers.get("content-length")
-        if length and length.isdigit() and int(length) > get_settings().max_body_bytes:
+        if length and length.isdigit() and int(length) > _body_limit(request):
             emit("PAYLOAD_TOO_LARGE", details={"route": request.url.path, "bytes": int(length)})
             response = problem(
                 413, "Payload Too Large", "/problems/payload-too-large", instance=request.url.path

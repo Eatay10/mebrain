@@ -3,9 +3,12 @@ import { useState } from "react";
 import {
   errorMessage,
   useCreateTeam,
+  useCreateUnit,
   useCreateUser,
   useTeams,
+  useUnits,
   useUpdateTeam,
+  useUpdateUnit,
   useUpdateUser,
   useUsers,
   type Schemas,
@@ -30,15 +33,20 @@ import {
 } from "../components/ui";
 import { roleLabel } from "../i18n/tr";
 import { fmtRelative } from "../lib/format";
+import { TeamOptions } from "../components/TeamOptions";
 
 export function AdminPage() {
   const { can } = useAuth();
-  const [tab, setTab] = useState<"users" | "teams">("users");
+  const [tab, setTab] = useState<"users" | "units" | "teams">("users");
   if (!can.direct) return <Card><ErrorState message="Bu sayfa sadece direktörler içindir." /></Card>;
   return (
     <>
-      <PageHeader title="Kullanıcı & Ekip" subtitle="Roller, ekip üyelikleri ve yöneticiler" actions={<Tabs value={tab} onChange={setTab} items={[{ value: "users", label: "Kullanıcılar" }, { value: "teams", label: "Ekipler" }]} />} />
-      {tab === "users" ? <Users /> : <Teams />}
+      <PageHeader
+        title="Organizasyon"
+        subtitle="Direktör → Unit → Ekip → Ekip üyesi: roller, unit'ler, ekipler ve yöneticiler"
+        actions={<Tabs value={tab} onChange={setTab} items={[{ value: "users", label: "Kullanıcılar" }, { value: "units", label: "Unit'ler" }, { value: "teams", label: "Ekipler" }]} />}
+      />
+      {tab === "users" ? <Users /> : tab === "units" ? <Units /> : <Teams />}
     </>
   );
 }
@@ -70,7 +78,7 @@ function Users() {
             </div>
             <Select aria-label="Ekip" value={teamId} onChange={(e) => (setTeamId(e.target.value), setPage(1))} className="w-44">
               <option value="">Tüm ekipler</option>
-              {teams.data?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              <TeamOptions teams={teams.data} />
             </Select>
             <Button size="sm" onClick={() => setCreating(true)}><Plus className="size-4" />Kullanıcı</Button>
           </>
@@ -95,9 +103,9 @@ function Users() {
                     </td>
                     <td className="px-3 py-2">
                       <label className="sr-only" htmlFor={`team-${u.id}`}>Ekip</label>
-                      <Select id={`team-${u.id}`} value={u.teamId ?? ""} disabled={u.role === "DIRECTOR" || u.role === "AUDITOR"} onChange={(e) => change(u, { teamId: e.target.value }, "Ekip güncellendi.")} className="h-8 w-40">
+                      <Select id={`team-${u.id}`} value={u.teamId ?? ""} disabled={u.role === "DIRECTOR" || u.role === "AUDITOR" || u.role === "UNIT_MANAGER"} onChange={(e) => change(u, { teamId: e.target.value }, "Ekip güncellendi.")} className="h-8 w-40">
                         {!u.teamId && <option value="">—</option>}
-                        {teams.data?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        <TeamOptions teams={teams.data} />
                       </Select>
                     </td>
                     <td className="px-3 py-2 text-xs text-muted">{fmtRelative(u.lastLoginAt)}</td>
@@ -124,7 +132,7 @@ function CreateUserModal({ open, onClose }: { open: boolean; onClose: () => void
   const toast = useToast();
   const create = useCreateUser();
   const [f, setF] = useState({ email: "", fullName: "", title: "", role: "EMPLOYEE" as Schemas["Role"], teamId: "", password: "" });
-  const teamless = f.role === "DIRECTOR" || f.role === "AUDITOR";
+  const teamless = f.role === "DIRECTOR" || f.role === "AUDITOR" || f.role === "UNIT_MANAGER";
   const valid = /^\S+@\S+\.\S+$/.test(f.email) && f.fullName.trim().length >= 2 && f.password.length >= 12 && (teamless || f.teamId || teams.data?.[0]);
   return (
     <Modal
@@ -138,7 +146,7 @@ function CreateUserModal({ open, onClose }: { open: boolean; onClose: () => void
         <Field label="E-posta" htmlFor="u-email"><Input id="u-email" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
         <Field label="Unvan" htmlFor="u-title"><Input id="u-title" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></Field>
         <Field label="Rol" htmlFor="u-role"><Select id="u-role" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value as Schemas["Role"] })}>{Object.entries(roleLabel).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select></Field>
-        {!teamless && <Field label="Ekip" htmlFor="u-team"><Select id="u-team" value={f.teamId} onChange={(e) => setF({ ...f, teamId: e.target.value })}>{teams.data?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></Field>}
+        {!teamless && <Field label="Ekip" htmlFor="u-team"><Select id="u-team" value={f.teamId} onChange={(e) => setF({ ...f, teamId: e.target.value })}><TeamOptions teams={teams.data} /></Select></Field>}
         <Field label="Geçici parola" htmlFor="u-pw" hint="En az 12 karakter."><Input id="u-pw" type="password" autoComplete="new-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field>
       </div>
     </Modal>
@@ -149,10 +157,11 @@ function Teams() {
   const toast = useToast();
   const teams = useTeams();
   const managers = useUsers({ pageSize: 100, isActive: true });
+  const units = useUnits();
   const update = useUpdateTeam();
   const create = useCreateTeam();
   const [name, setName] = useState("");
-  const mgrs = managers.data?.items.filter((u) => u.role === "MANAGER") ?? [];
+  const mgrs = managers.data?.items.filter((u) => u.role === "MANAGER" || u.role === "UNIT_MANAGER") ?? [];
   const onError = (e: unknown) => toast("error", errorMessage(e));
   return (
     <Card>
@@ -169,11 +178,57 @@ function Teams() {
         <ul className="divide-y divide-border">
           {teams.data.map((t) => (
             <li key={t.id} className="flex flex-wrap items-center gap-4 px-5 py-3">
-              <div className="min-w-40 flex-1"><p className="font-medium text-text">{t.name}</p><p className="text-xs text-muted">{t.memberCount} aktif üye</p></div>
+              <div className="min-w-40 flex-1"><p className="font-medium text-text">{t.name}</p><p className="text-xs text-muted">{t.memberCount} aktif üye{t.unitName ? ` · ${t.unitName}` : ""}</p></div>
+              <label className="text-sm text-muted" htmlFor={`unit-${t.id}`}>Unit</label>
+              <Select id={`unit-${t.id}`} value={t.unitId ?? ""} onChange={(e) => update.mutate({ id: t.id, unitId: e.target.value || null }, { onSuccess: () => toast("success", "Unit güncellendi."), onError })} className="w-52">
+                <option value="">Bağımsız (doğrudan direktör)</option>
+                {units.data?.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </Select>
               <label className="text-sm text-muted" htmlFor={`mgr-${t.id}`}>Yönetici</label>
               <Select id={`mgr-${t.id}`} value={t.manager?.id ?? ""} onChange={(e) => update.mutate({ id: t.id, managerId: e.target.value || null }, { onSuccess: () => toast("success", "Yönetici güncellendi."), onError })} className="w-56">
                 <option value="">Atanmamış</option>
                 {mgrs.map((m) => <option key={m.id} value={m.id}>{m.fullName}</option>)}
+              </Select>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function Units() {
+  const toast = useToast();
+  const units = useUnits();
+  const people = useUsers({ pageSize: 100, isActive: true });
+  const update = useUpdateUnit();
+  const create = useCreateUnit();
+  const [name, setName] = useState("");
+  const unitManagers = people.data?.items.filter((u) => u.role === "UNIT_MANAGER") ?? [];
+  const onError = (e: unknown) => toast("error", errorMessage(e));
+  return (
+    <Card>
+      <CardHeader
+        title="Unit'ler"
+        subtitle="Unit yöneticisi altındaki ekiplerin task'larını görür ve ekip yöneticilerine task atayabilir."
+        actions={
+          <form className="flex gap-2" onSubmit={(e) => (e.preventDefault(), name.trim().length >= 2 && create.mutate({ name: name.trim() }, { onSuccess: () => setName(""), onError }))}>
+            <Input aria-label="Yeni unit adı" placeholder="Yeni unit adı" value={name} onChange={(e) => setName(e.target.value)} className="w-48" maxLength={100} />
+            <Button size="sm" type="submit" disabled={name.trim().length < 2} loading={create.isPending}><Plus className="size-4" />Ekle</Button>
+          </form>
+        }
+      />
+      {units.error ? <ErrorState message={errorMessage(units.error)} /> : !units.data ? <Skeleton className="m-5 h-40" /> : !units.data.length ? (
+        <EmptyState title="Unit yok" description="Ekipleri gruplamak için unit ekleyin." />
+      ) : (
+        <ul className="divide-y divide-border">
+          {units.data.map((u) => (
+            <li key={u.id} className="flex flex-wrap items-center gap-4 px-5 py-3">
+              <div className="min-w-40 flex-1"><p className="font-medium text-text">{u.name}</p><p className="text-xs text-muted">{u.teamCount} ekip</p></div>
+              <label className="text-sm text-muted" htmlFor={`umgr-${u.id}`}>Unit yöneticisi</label>
+              <Select id={`umgr-${u.id}`} value={u.manager?.id ?? ""} onChange={(e) => update.mutate({ id: u.id, managerId: e.target.value || null }, { onSuccess: () => toast("success", "Unit yöneticisi güncellendi."), onError })} className="w-56">
+                <option value="">Atanmamış</option>
+                {unitManagers.map((m) => <option key={m.id} value={m.id}>{m.fullName}</option>)}
               </Select>
             </li>
           ))}

@@ -1,9 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Sparkles } from "lucide-react";
 import { useEffect } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import {
   errorMessage,
+  useAssignableUsers,
+  useAssigneeSuggestions,
   useCreateTask,
   useProjects,
   useTeams,
@@ -13,7 +16,8 @@ import {
 } from "../api/hooks";
 import { useAuth } from "../auth";
 import { Button, Field, Input, Modal, Select, Textarea, useToast } from "../components/ui";
-import { categoryLabel, priorityLabel, recurrenceLabel } from "../i18n/tr";
+import { categoryLabel, priorityLabel, recurrenceLabel, roleLabel } from "../i18n/tr";
+import { TeamOptions } from "../components/TeamOptions";
 
 // Sözleşmedeki kısıtların aynası (R-TS-04): title 3–200, description ≤ 10000.
 const schema = z
@@ -30,6 +34,8 @@ const schema = z
     ]),
     assigneeId: z.string().optional(),
     backupAssigneeId: z.string().optional(),
+    requesterId: z.string().optional(),
+    collaboratorIds: z.array(z.string()).max(20, "En fazla 20 kişi."),
     dueDate: z.string().optional(),
     recurrence: z.enum(["NONE", "DAILY", "WEEKLY", "MONTHLY"]),
   })
@@ -38,6 +44,10 @@ const schema = z
   .refine((v) => !v.backupAssigneeId || v.backupAssigneeId !== v.assigneeId, {
     path: ["backupAssigneeId"],
     message: "Yedek, sorumluyla aynı olamaz.",
+  })
+  .refine((v) => !v.collaboratorIds.some((c) => c === v.assigneeId || c === v.backupAssigneeId), {
+    path: ["collaboratorIds"],
+    message: "Sorumlu/yedek ayrıca çalışma arkadaşı olamaz.",
   });
 type FormValues = z.infer<typeof schema>;
 
@@ -67,6 +77,8 @@ export function TaskFormModal({ open, onClose, task }: { open: boolean; onClose:
       category: task?.category ?? "OTHER",
       assigneeId: task?.assignee?.id ?? (can.manage ? undefined : user.id),
       backupAssigneeId: task?.backupAssignee?.id,
+      requesterId: task?.requester?.id ?? user.id,
+      collaboratorIds: task?.collaborators?.map((c) => c.id) ?? [],
       dueDate: task?.dueDate ?? undefined,
       recurrence: task?.recurrence ?? "NONE",
     });
@@ -80,6 +92,13 @@ export function TaskFormModal({ open, onClose, task }: { open: boolean; onClose:
   const projectTeam = projects.data?.items.find((p) => p.id === projectId)?.teamId;
   const effectiveTeam = type === "PROJECT" ? projectTeam : teamId;
   const members = useUsers({ teamId: effectiveTeam, pageSize: 100, isActive: true });
+  const assignable = useAssignableUsers(can.manage ? effectiveTeam : undefined);
+  const category = useWatch({ control, name: "category" });
+  const assigneeId = useWatch({ control, name: "assigneeId" });
+  const backupId = useWatch({ control, name: "backupAssigneeId" });
+  const collaboratorIds = useWatch({ control, name: "collaboratorIds" }) ?? [];
+  const suggestions = useAssigneeSuggestions(can.manage && category !== "OTHER" ? category : undefined, effectiveTeam);
+  const best = suggestions.data?.[0];
 
   useEffect(() => {
     if (!isEdit && !can.manage) setValue("assigneeId", user.id);
@@ -97,6 +116,8 @@ export function TaskFormModal({ open, onClose, task }: { open: boolean; onClose:
           category: v.category,
           assigneeId: opt(v.assigneeId) ?? null,
           backupAssigneeId: opt(v.backupAssigneeId) ?? null,
+          requesterId: opt(v.requesterId) ?? null,
+          collaboratorIds: v.collaboratorIds,
           dueDate: opt(v.dueDate) ?? null,
           recurrence: v.recurrence,
         },
@@ -114,6 +135,8 @@ export function TaskFormModal({ open, onClose, task }: { open: boolean; onClose:
           category: v.category,
           assigneeId: opt(v.assigneeId),
           backupAssigneeId: opt(v.backupAssigneeId),
+          requesterId: opt(v.requesterId),
+          collaboratorIds: v.collaboratorIds.length ? v.collaboratorIds : undefined,
           dueDate: opt(v.dueDate),
           recurrence: v.recurrence,
         },
@@ -123,7 +146,21 @@ export function TaskFormModal({ open, onClose, task }: { open: boolean; onClose:
   });
 
   const e = formState.errors;
-  const memberOptions = (members.data?.items ?? []).filter((m) => m.teamId === effectiveTeam);
+  // Yönetici+: atama kuralına göre (direktör → unit yöneticileri, unit yöneticisi → yöneticiler ve ekipler,
+  // yönetici → ekip üyeleri). Çalışan: kendisi; çalışma arkadaşı olarak ekip arkadaşları.
+  const memberOptions: { id: string; fullName: string; hint?: string }[] = can.manage
+    ? (assignable.data ?? []).map((u) => ({
+        id: u.id,
+        fullName: u.fullName,
+        hint: u.role === "EMPLOYEE" ? (u.teamName ?? undefined) : roleLabel[u.role],
+      }))
+    : (members.data?.items ?? []).filter((m) => m.teamId === effectiveTeam);
+  const requesterOptions = [{ id: user.id, fullName: `${user.fullName} (ben)` }, ...memberOptions.filter((m) => m.id !== user.id)];
+  if (task?.requester && !requesterOptions.some((r) => r.id === task.requester!.id)) {
+    requesterOptions.push({ id: task.requester.id, fullName: task.requester.fullName });
+  }
+  const collaboratorOptions = memberOptions.filter((m) => m.id !== assigneeId && m.id !== backupId);
+  const label = (m: { fullName: string; hint?: string }) => (m.hint ? `${m.fullName} — ${m.hint}` : m.fullName);
   return (
     <Modal
       open={open}
@@ -151,9 +188,7 @@ export function TaskFormModal({ open, onClose, task }: { open: boolean; onClose:
         {!isEdit && type === "STANDARD" && (
           <Field label="Ekip" htmlFor="t-team" error={e.teamId?.message}>
             <Select id="t-team" {...register("teamId")} disabled={!can.manage}>
-              {(can.manage ? manageableTeams : (teams.data ?? []).filter((t) => t.id === user.teamId)).map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
+              <TeamOptions teams={can.manage ? manageableTeams : (teams.data ?? []).filter((t) => t.id === user.teamId)} />
             </Select>
           </Field>
         )}
@@ -187,18 +222,65 @@ export function TaskFormModal({ open, onClose, task }: { open: boolean; onClose:
             {Object.entries(categoryLabel).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </Select>
         </Field>
+        {can.manage && best && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary-soft px-3 py-2 text-sm sm:col-span-2" role="status">
+            <Sparkles className="size-4 text-primary" aria-hidden />
+            <span className="text-text">
+              Bu task için en yüksek yetkinliğe sahip kişi: <strong>{best.user.fullName}</strong>{" "}
+              <span className="text-muted">
+                (%{best.score} · {best.competencies.map((c) => `${c.name} %${c.score}`).join(", ")})
+              </span>
+            </span>
+            {assigneeId !== best.user.id && (
+              <Button size="sm" variant="secondary" className="ml-auto" onClick={() => setValue("assigneeId", best.user.id, { shouldValidate: true })}>
+                Sorumlu yap
+              </Button>
+            )}
+          </div>
+        )}
+        <Field label="Talep sahibi" htmlFor="t-requester" hint="Task'ı talep eden kişi.">
+          <Select id="t-requester" {...register("requesterId")}>
+            {requesterOptions.map((m) => <option key={m.id} value={m.id}>{m.fullName}</option>)}
+          </Select>
+        </Field>
         <Field label="Sorumlu" htmlFor="t-assignee" error={e.assigneeId?.message}>
           <Select id="t-assignee" {...register("assigneeId")} disabled={!can.manage}>
             <option value="">Atanmamış</option>
-            {(can.manage ? memberOptions : [user]).map((m) => <option key={m.id} value={m.id}>{m.fullName}</option>)}
+            {(can.manage ? memberOptions : [user]).map((m) => <option key={m.id} value={m.id}>{label(m)}</option>)}
           </Select>
         </Field>
-        <Field label="Yedek sorumlu" htmlFor="t-backup" error={e.backupAssigneeId?.message} hint="Asıl kişi yokken işi devralır.">
-          <Select id="t-backup" {...register("backupAssigneeId")}>
+        <Field label="Yedek sorumlu" htmlFor="t-backup" error={e.backupAssigneeId?.message} hint="Asıl kişi yokken işi devralır; task'ı otomatik takip eder.">
+          <Select id="t-backup" {...register("backupAssigneeId")} disabled={!can.manage}>
             <option value="">Yok</option>
-            {memberOptions.map((m) => <option key={m.id} value={m.id}>{m.fullName}</option>)}
+            {memberOptions.map((m) => <option key={m.id} value={m.id}>{label(m)}</option>)}
           </Select>
         </Field>
+        <fieldset className="sm:col-span-2">
+          <legend className="mb-1.5 text-sm font-medium text-text">Çalışma arkadaşları</legend>
+          {collaboratorOptions.length === 0 ? (
+            <p className="text-xs text-muted">Eklenebilecek kişi yok.</p>
+          ) : (
+            <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto">
+              {collaboratorOptions.map((m) => {
+                const on = collaboratorIds.includes(m.id);
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() =>
+                      setValue("collaboratorIds", on ? collaboratorIds.filter((x) => x !== m.id) : [...collaboratorIds, m.id], { shouldValidate: true })
+                    }
+                    className={on ? "rounded-full bg-primary px-2.5 py-1 text-xs text-on-primary" : "rounded-full bg-surface-2 px-2.5 py-1 text-xs text-text hover:bg-primary-soft"}
+                  >
+                    {m.fullName}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {e.collaboratorIds?.message && <p className="mt-1 text-xs text-danger">{e.collaboratorIds.message}</p>}
+        </fieldset>
         <Field label="Son tarih" htmlFor="t-due">
           <Input id="t-due" type="date" {...register("dueDate")} />
         </Field>

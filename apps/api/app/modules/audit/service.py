@@ -43,7 +43,7 @@ def query(
 ) -> Select[tuple[AuditLog]]:
     require(can_read_audit(user), user, "audit.read")
     q = select(AuditLog)
-    scope = managed_team_ids(db, user) if user.role == c.Role.MANAGER else None
+    scope = managed_team_ids(db, user) if user.role in (c.Role.MANAGER, c.Role.UNIT_MANAGER) else None
     if scope is not None:
         q = q.join(User, AuditLog.actor_id == User.id).where(team_filter(User.team_id, scope))
     if actor_id is not None:

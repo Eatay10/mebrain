@@ -2,7 +2,7 @@ from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app import contract as c
@@ -107,3 +107,57 @@ def decide_participation(
     db: Session = Depends(get_db),
 ) -> c.Participation:
     return service.decide(db, user, participationId, body)
+
+
+@router.get(
+    "/events/{eventId}/photos",
+    operation_id="listEventPhotos",
+    response_model=list[c.EventPhoto],
+    dependencies=READ,
+)
+def list_photos(
+    eventId: UUID,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),  # noqa: N803
+) -> list[c.EventPhoto]:
+    return service.list_photos(db, user, eventId)
+
+
+@router.post(
+    "/events/{eventId}/photos",
+    operation_id="uploadEventPhoto",
+    response_model=c.EventPhoto,
+    status_code=201,
+    dependencies=WRITE,
+)
+async def upload_photo(
+    eventId: UUID,  # noqa: N803
+    file: UploadFile = File(...),
+    caption: str | None = Form(default=None, max_length=300),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> c.EventPhoto:
+    from app.modules.tasks.router import read_limited
+
+    data = await read_limited(file)
+    return service.add_photo(db, user, eventId, caption, file.content_type, data)
+
+
+@router.get("/event-photos/{photoId}", operation_id="getEventPhoto", dependencies=READ)
+def get_photo(photoId: UUID, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Response:  # noqa: N803
+    ph = service.get_photo(db, user, photoId)
+    return Response(
+        content=ph.data,
+        media_type=ph.content_type,
+        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=3600"},
+    )
+
+
+@router.delete(
+    "/event-photos/{photoId}", operation_id="deleteEventPhoto", status_code=204, dependencies=WRITE
+)
+def delete_photo(
+    photoId: UUID, user: User = Depends(current_user), db: Session = Depends(get_db)
+) -> Response:  # noqa: N803
+    service.delete_photo(db, user, photoId)
+    return Response(status_code=204)

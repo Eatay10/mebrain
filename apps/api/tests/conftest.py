@@ -55,7 +55,7 @@ from app.auth.passwords import hash_password  # noqa: E402
 from app.contract import Recurrence, Role, TaskStatus, TaskType  # noqa: E402
 from app.core.ratelimit import limiter  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import Project, Task, Team, User  # noqa: E402
+from app.models import Project, Task, Team, Unit, User  # noqa: E402
 from app.seed.__main__ import TABLES  # noqa: E402
 
 PASSWORD = secrets.token_urlsafe(18)  # her test çalışmasında rastgele
@@ -76,6 +76,7 @@ def _migrate() -> None:
 @dataclass
 class World:
     teams: dict[str, Team] = field(default_factory=dict)
+    units: dict[str, Unit] = field(default_factory=dict)
     users: dict[str, User] = field(default_factory=dict)
     projects: dict[str, Project] = field(default_factory=dict)
     tasks: dict[str, Task] = field(default_factory=dict)
@@ -95,10 +96,14 @@ def _user(db: Session, w: World, key: str, role: Role, team: str | None) -> None
 
 @pytest.fixture
 def world() -> Iterator[World]:
-    """İki ekip (soc, pentest); SOC yöneticisi 'vuln' ekibini de yönetir."""
+    """Üç ekip (soc, pentest, vuln); SOC yöneticisi 'vuln' ekibini de yönetir.
+
+    'defense' unit'i soc + vuln ekiplerini kapsar (unit yöneticisi: unit.defense); pentest bir unit'e bağlı değil.
+    """
     limiter.reset()
     with Session(OWNER, expire_on_commit=False) as db:
         db.execute(text("UPDATE teams SET manager_id = NULL"))
+        db.execute(text("UPDATE units SET manager_id = NULL"))
         db.execute(text(f"TRUNCATE {', '.join(TABLES)} RESTART IDENTITY CASCADE"))
         w = World()
         for key, name in (("soc", "SOC"), ("pentest", "Pentest"), ("vuln", "Zafiyet")):
@@ -107,6 +112,7 @@ def world() -> Iterator[World]:
         db.flush()
         _user(db, w, "director", Role.DIRECTOR, None)
         _user(db, w, "auditor", Role.AUDITOR, None)
+        _user(db, w, "unit.defense", Role.UNIT_MANAGER, None)
         _user(db, w, "manager.soc", Role.MANAGER, "soc")
         _user(db, w, "manager.pentest", Role.MANAGER, "pentest")
         for i in (1, 2, 3):
@@ -117,6 +123,11 @@ def world() -> Iterator[World]:
         w.teams["soc"].manager_id = w.users["manager.soc"].id
         w.teams["vuln"].manager_id = w.users["manager.soc"].id
         w.teams["pentest"].manager_id = w.users["manager.pentest"].id
+        w.units["defense"] = Unit(name="Savunma", manager_id=w.users["unit.defense"].id)
+        db.add(w.units["defense"])
+        db.flush()
+        w.teams["soc"].unit_id = w.units["defense"].id
+        w.teams["vuln"].unit_id = w.units["defense"].id
         w.projects["soc"] = Project(team_id=w.teams["soc"].id, name="SIEM Yenileme")
         w.projects["pentest"] = Project(team_id=w.teams["pentest"].id, name="Dış Test")
         db.add_all(w.projects.values())

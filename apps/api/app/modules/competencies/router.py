@@ -92,3 +92,48 @@ def delete_user_competency(
 ) -> Response:
     service.remove(db, user, userId, competencyId)
     return Response(status_code=204)
+
+
+@router.get(
+    "/users/{userId}/certifications",
+    operation_id="listCertifications",
+    response_model=list[c.Certification],
+    dependencies=READ,
+)
+def list_certifications(
+    userId: UUID,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),  # noqa: N803
+) -> list[c.Certification]:
+    return service.list_certifications(db, user, userId)
+
+
+@router.post(
+    "/users/{userId}/certifications",
+    operation_id="addCertification",
+    response_model=c.Certification,
+    status_code=201,
+    dependencies=[SessionOnly],
+)
+def add_certification(
+    userId: UUID,  # noqa: N803
+    body: c.CertificationCreate,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> c.Certification:
+    return service.add_certification(db, user, userId, body)
+
+
+@router.delete(
+    "/certifications/{certificationId}",
+    operation_id="deleteCertification",
+    status_code=204,
+    dependencies=[SessionOnly],
+)
+def delete_certification(
+    certificationId: UUID,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),  # noqa: N803
+) -> Response:
+    service.delete_certification(db, user, certificationId)
+    return Response(status_code=204)

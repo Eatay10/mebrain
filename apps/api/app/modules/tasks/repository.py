@@ -12,7 +12,7 @@ from app.auth.policies import can_read_task
 from app.auth.scope import visible_task_filter
 from app.contract import Recurrence, TaskCategory, TaskPriority, TaskStatus, TaskType
 from app.core.errors import NotFound
-from app.models import Task, TaskComment, User
+from app.models import Task, TaskCollaborator, TaskComment, TaskWatcher, User
 from app.security_events.service import emit
 
 PRIORITY_ORDER = {TaskPriority.LOW: 1, TaskPriority.MEDIUM: 2, TaskPriority.HIGH: 3, TaskPriority.CRITICAL: 4}
@@ -47,6 +47,8 @@ class TaskFilters:
     due_from: date | None = None
     due_to: date | None = None
     sort: str = "-updatedAt"
+    watching_user: UUID | None = None
+    has_backup: bool | None = None
 
 
 def _sort_clause(sort: str) -> list[Any]:
@@ -81,7 +83,21 @@ def build_query(db: Session, user: User, f: TaskFilters) -> Select[tuple[Task]]:
     if f.project_id:
         conds.append(Task.project_id == f.project_id)
     if f.assignee_id:
-        conds.append(or_(Task.assignee_id == f.assignee_id, Task.backup_assignee_id == f.assignee_id))
+        conds.append(
+            or_(
+                Task.assignee_id == f.assignee_id,
+                Task.backup_assignee_id == f.assignee_id,
+                Task.id.in_(
+                    select(TaskCollaborator.task_id).where(TaskCollaborator.user_id == f.assignee_id)
+                ),
+            )
+        )
+    if f.has_backup is not None:
+        conds.append(
+            Task.backup_assignee_id.is_not(None) if f.has_backup else Task.backup_assignee_id.is_(None)
+        )
+    if f.watching_user:
+        conds.append(Task.id.in_(select(TaskWatcher.task_id).where(TaskWatcher.user_id == f.watching_user)))
     if f.overdue is True:
         conds.append(and_(Task.status != TaskStatus.DONE, Task.due_date < date.today()))
     elif f.overdue is False:

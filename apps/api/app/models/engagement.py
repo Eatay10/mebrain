@@ -1,9 +1,19 @@
 """Etkinlikler, katılımlar ve yetkinlikler."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, SmallInteger, String, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    LargeBinary,
+    SmallInteger,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.contract import CompetencyCategory, EventScope, EventType, ParticipationRole, ParticipationStatus
@@ -23,6 +33,7 @@ class Event(Base):
     organizer: Mapped[str | None] = mapped_column(String(150))
     location: Mapped[str | None] = mapped_column(String(200))
     url: Mapped[str | None] = mapped_column(String(500))
+    notes: Mapped[str | None] = mapped_column(Text)
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
@@ -31,6 +42,38 @@ class Event(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     creator: Mapped[User] = relationship(lazy="joined")
+    competency_links: Mapped[list["EventCompetency"]] = relationship(
+        lazy="selectin", cascade="all, delete-orphan"
+    )
+
+
+class EventCompetency(Base):
+    """Etkinlik tamamlanınca (ATTENDED) artacak yetkinlikler."""
+
+    __tablename__ = "event_competencies"
+    __table_args__ = (CheckConstraint("points BETWEEN 1 AND 50", name="points_range"),)
+
+    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), primary_key=True)
+    competency_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("competencies.id"), primary_key=True)
+    points: Mapped[int] = mapped_column(SmallInteger, default=10)
+
+    competency: Mapped["Competency"] = relationship(lazy="joined")
+
+
+class EventPhoto(Base):
+    __tablename__ = "event_photos"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True)
+    caption: Mapped[str | None] = mapped_column(String(300))
+    content_type: Mapped[str] = mapped_column(String(50))
+    size_bytes: Mapped[int]
+    data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    uploaded_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = created_at_col()
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    uploader: Mapped[User] = relationship(lazy="joined")
 
 
 class EventParticipation(Base):
@@ -64,11 +107,15 @@ class Competency(Base):
 
 class UserCompetency(Base):
     __tablename__ = "user_competencies"
-    __table_args__ = (CheckConstraint("level BETWEEN 1 AND 5", name="level_range"),)
+    __table_args__ = (
+        CheckConstraint("level BETWEEN 1 AND 5", name="level_range"),
+        CheckConstraint("score BETWEEN 0 AND 100", name="score_range"),
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
     competency_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("competencies.id"), primary_key=True)
     level: Mapped[int] = mapped_column(SmallInteger)
+    score: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
     evidence: Mapped[str | None] = mapped_column(String(500))
     verified_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -76,3 +123,37 @@ class UserCompetency(Base):
 
     competency: Mapped[Competency] = relationship(lazy="joined")
     verifier: Mapped[User | None] = relationship(foreign_keys=[verified_by], lazy="joined")
+
+
+class Certification(Base):
+    __tablename__ = "certifications"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    issuer: Mapped[str | None] = mapped_column(String(100))
+    issued_on: Mapped[date] = mapped_column(Date)
+    expires_on: Mapped[date | None] = mapped_column(Date)
+    credential_url: Mapped[str | None] = mapped_column(String(500))
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = created_at_col()
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class CompetencyScoreLog(Base):
+    """Yetkinlik puanı artışlarının kaynağı; aynı kaynak aynı yetkinliğe bir kez puan verir."""
+
+    __tablename__ = "competency_score_logs"
+    __table_args__ = (
+        UniqueConstraint("user_id", "competency_id", "source_type", "source_id", name="uq_score_log_source"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    competency_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("competencies.id"))
+    source_type: Mapped[str] = mapped_column(String(20))  # EVENT | CERTIFICATION
+    source_id: Mapped[uuid.UUID]
+    points: Mapped[int] = mapped_column(SmallInteger)
+    created_at: Mapped[datetime] = created_at_col()
+
+    competency: Mapped[Competency] = relationship(lazy="joined")
