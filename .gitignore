@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+# Node
+node_modules/
+dist/
+.vite/
+playwright-report/
+test-results/
+# Env / secrets
+.env
+.env.*
+!.env.example
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+# Runtime
+logs/*.log
+reports/agents/*/local.json
+# Claude hook çalışma durumu (aktif TASK, ofsetler)
+.claude/state/
+.claude/settings.local.json

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Kesin guardrail'ler: secret taraması, sözleşme lint'i, Python/TS statik kontroller (sadece ilgili dosyalar değiştiyse).
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+fail=0
+
+if command -v gitleaks >/dev/null; then
+  gitleaks protect --staged --no-banner --redact >/dev/null 2>&1 || { echo "✘ gitleaks: staged değişikliklerde secret var (R-CORE-06)"; fail=1; }
+else
+  echo "⚠ gitleaks yok — secret taraması atlandı"
+fi
+
+if echo "$staged" | grep -q '^knowledge/contracts/openapi.yaml$'; then
+  npx -y @redocly/cli@latest lint knowledge/contracts/openapi.yaml >/dev/null 2>&1 || { echo "✘ redocly: sözleşme lint hatası (R-API-02)"; fail=1; }
+fi
+
+if echo "$staged" | grep -q '^apps/api/.*\.py$' && [ -f "$root/apps/api/pyproject.toml" ]; then
+  (cd "$root/apps/api" && uv run ruff check . && uv run ruff format --check .) || { echo "✘ ruff (R-PY-04)"; fail=1; }
+fi
+
+if echo "$staged" | grep -qE '^apps/web/.*\.(ts|tsx)$' && [ -f "$root/apps/web/package.json" ]; then
+  (cd "$root/apps/web" && pnpm -s lint && pnpm -s typecheck) || { echo "✘ eslint/tsc (R-TS-01)"; fail=1; }
+fi
+
+# history/ ve logs/ sadece hook'lar tarafından yazılır; elle değiştirilmiş satır silme yok
+if git diff --cached --diff-filter=D --name-only | grep -qE '^(history|logs)/'; then
+  echo "✘ history/ veya logs/ kaydı silinemez (denetim izi)"; fail=1
+fi
+
+exit $fail

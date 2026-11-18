@@ -1,0 +1,1 @@
+../knowledge/THREAT_MODEL.md

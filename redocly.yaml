@@ -1,0 +1,9 @@
+extends:
+  - recommended
+rules:
+  # Yerel geliştirme sunucusu bilinçli olarak localhost.
+  no-server-example.com: off
+  # Tag'ler kendini açıklıyor; açıklama zorunlu değil.
+  tag-description: off
+  # /health ve /ready kimliksiz ve 4xx döndürmez.
+  operation-4xx-response: error   # health/ready istisnası: .redocly.lint-ignore.yaml

@@ -1,0 +1,79 @@
+name: cyber-task-hub
+
+x-api-env: &api-env
+  DATABASE_URL: postgresql+psycopg://cth_app:${CTH_APP_DB_PASSWORD}@db:5432/${POSTGRES_DB}
+  MIGRATION_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+  CTH_ENV: ${CTH_ENV:-development}
+  CTH_COOKIE_SECURE: ${CTH_COOKIE_SECURE:-false}
+  CTH_CORS_ORIGINS: ${CTH_CORS_ORIGINS}
+  CTH_PUBLIC_BASE_URL: ${CTH_PUBLIC_BASE_URL}
+  SMTP_HOST: mailpit
+  SMTP_PORT: 1025
+  SMTP_FROM: ${SMTP_FROM}
+  CTH_SEED_PASSWORD: ${CTH_SEED_PASSWORD}
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      CTH_APP_DB_PASSWORD: ${CTH_APP_DB_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./infra/db/init-app-role.sh:/docker-entrypoint-initdb.d/10-init-app-role.sh:ro
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
+
+  api:
+    build: ./apps/api
+    environment: *api-env
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]
+    depends_on:
+      db: { condition: service_healthy }
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v1/ready').status==200 else 1)"]
+      interval: 5s
+      retries: 20
+
+  worker:
+    build: ./apps/api
+    environment: *api-env
+    command: ["python", "-m", "app.worker"]
+    depends_on:
+      api: { condition: service_healthy }
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    depends_on:
+      api: { condition: service_healthy }
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  mcp:
+    build: ./apps/mcp
+    environment:
+      CTH_API_BASE_URL: http://api:8000/api/v1
+      CTH_MCP_TRANSPORT: http
+    depends_on:
+      api: { condition: service_healthy }
+    ports:
+      - "127.0.0.1:8001:8001"
+
+volumes:
+  db-data:

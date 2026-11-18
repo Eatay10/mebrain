@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# R-GIT-01 / R-GIT-03: branch adı ve main koruması.
+branch=$(git rev-parse --abbrev-ref HEAD)
+while read -r _ _ remote_ref _; do
+  if [[ "$remote_ref" == "refs/heads/main" ]]; then
+    echo "✘ pre-push: main'e doğrudan push yasak; PR aç (R-GIT-03)" >&2; exit 1
+  fi
+done
+if ! [[ "$branch" =~ ^task/TASK-[0-9]{3}- ]]; then
+  echo "✘ pre-push: branch adı 'task/TASK-NNN-kisa-ad' olmalı (R-GIT-01). Şu an: $branch" >&2; exit 1
+fi
+exit 0

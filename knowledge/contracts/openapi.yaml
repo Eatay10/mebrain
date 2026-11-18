@@ -1,0 +1,2904 @@
+openapi: 3.1.0
+info:
+  title: Cyber Task Hub API
+  version: 1.0.0
+  summary: Siber güvenlik ekipleri için task, proje, etkinlik, yetkinlik, rapor ve bildirim API'si.
+  description: |
+    Tek kaynak sözleşme. Kurallar: adr/0002-auth-and-rbac.md, adr/0003-api-and-mcp.md.
+
+    - Web istemcisi `cth_session` cookie'si ile kimlik doğrular; durum değiştiren isteklerde `X-CSRF-Token` header'ı zorunludur.
+    - Entegrasyonlar ve MCP sunucusu `Authorization: Bearer cth_...` API token'ı kullanır.
+    - Denetmen (AUDITOR) rolü tüm kurumu salt-okunur görür; durum değiştiren her istek 403 döner.
+    - Kapsam dışındaki kaynaklar için 404, kapsam içinde yetkisiz işlem için 403 döner.
+    - Hatalar RFC 9457 `application/problem+json` biçimindedir.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Yerel geliştirme
+security:
+  - cookieAuth: []
+  - bearerAuth: []
+tags:
+  - name: Auth
+  - name: Me
+  - name: Users
+  - name: Teams
+  - name: Projects
+  - name: Tasks
+  - name: Dashboard
+  - name: Reports
+  - name: Notifications
+  - name: Announcements
+  - name: Events
+  - name: Competencies
+  - name: Audit
+  - name: Security
+  - name: System
+
+paths:
+  # ---------------------------------------------------------------- System
+  /health:
+    get:
+      tags: [System]
+      operationId: getHealth
+      summary: Canlılık kontrolü
+      security: []
+      responses:
+        '200':
+          description: Servis ayakta
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+  /ready:
+    get:
+      tags: [System]
+      operationId: getReadiness
+      summary: Hazırlık kontrolü (DB erişimi dahil)
+      security: []
+      responses:
+        '200':
+          description: Hazır
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+        '503':
+          description: Hazır değil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+  # ---------------------------------------------------------------- Auth
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: E-posta ve parola ile giriş
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Giriş başarılı; `cth_session` ve `cth_csrf` cookie'leri set edilir.
+          headers:
+            Set-Cookie:
+              description: Session ve CSRF cookie'leri
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Geçersiz kimlik bilgisi (hangi alanın yanlış olduğu belirtilmez)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '423':
+          description: Hesap geçici olarak kilitli
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Oturumu sonlandır
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204':
+          description: Çıkış yapıldı
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/me:
+    get:
+      tags: [Auth]
+      operationId: getMe
+      summary: Oturumdaki kullanıcı, rolü, kapsamı ve CSRF token'ı
+      responses:
+        '200':
+          description: Oturum bilgisi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ---------------------------------------------------------------- Me
+  /me/api-tokens:
+    get:
+      tags: [Me]
+      operationId: listMyApiTokens
+      summary: Kendi API token'larım (secret gösterilmez)
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Token listesi
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ApiToken'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Me]
+      operationId: createMyApiToken
+      summary: API token oluştur (düz metin yalnızca bu yanıtta döner)
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiTokenCreate'
+      responses:
+        '201':
+          description: Oluşturuldu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiTokenCreated'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me/api-tokens/{tokenId}:
+    delete:
+      tags: [Me]
+      operationId: revokeMyApiToken
+      summary: API token'ı iptal et
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+      responses:
+        '204':
+          description: İptal edildi
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------- Users
+  /users:
+    get:
+      tags: [Users]
+      operationId: listUsers
+      summary: Kullanıcıları listele (rol kapsamına göre)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Query'
+        - name: teamId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: role
+          in: query
+          schema:
+            $ref: '#/components/schemas/Role'
+        - name: isActive
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Kullanıcı listesi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Users]
+      operationId: createUser
+      summary: Kullanıcı oluştur (direktör)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreate'
+      responses:
+        '201':
+          description: Oluşturuldu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /users/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [Users]
+      operationId: getUser
+      summary: Kullanıcı detayı
+      responses:
+        '200':
+          description: Kullanıcı
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Users]
+      operationId: updateUser
+      summary: Kullanıcı güncelle; rol ve ekip değişikliği sadece direktör
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdate'
+      responses:
+        '200':
+          description: Güncellendi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------- Teams
+  /teams:
+    get:
+      tags: [Teams]
+      operationId: listTeams
+      summary: Görülebilir ekipler
+      responses:
+        '200':
+          description: Ekip listesi
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Team'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Teams]
+      operationId: createTeam
+      summary: Ekip oluştur (direktör)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamCreate'
+      responses:
+        '201':
+          description: Oluşturuldu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /teams/{teamId}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [Teams]
+      operationId: getTeam
+      summary: Ekip detayı
+      responses:
+        '200':
+          description: Ekip
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Teams]
+      operationId: updateTeam
+      summary: Ekip güncelle (direktör)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamUpdate'
+      responses:
+        '200':
+          description: Güncellendi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------- Projects
+  /projects:
+    get:
+      tags: [Projects]
+      operationId: listProjects
+      summary: Projeleri listele (rol kapsamına göre)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Query'
+        - name: teamId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ProjectStatus'
+      responses:
+        '200':
+          description: Proje listesi (ilerleme bilgisiyle)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Projects]
+      operationId: createProject
+      summary: Proje oluştur (yönetici+)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCreate'
+      responses:
+        '201':
+          description: Oluşturuldu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /projects/{projectId}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [Projects]
+      operationId: getProject
+      summary: Proje detayı
+      responses:
+        '200':
+          description: Proje
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Projects]
+      operationId: updateProject
+      summary: Proje güncelle (yönetici+)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectUpdate'
+      responses:
+        '200':
+          description: Güncellendi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Projects]
+      operationId: deleteProject
+      summary: Projeyi sil (soft delete; açık task varsa 409)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204':
+          description: Silindi
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # ---------------------------------------------------------------- Tasks
+  /tasks:
+    get:
+      tags: [Tasks]
+      operationId: listTasks
+      summary: Task'ları listele / ara (rol kapsamına göre)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Query'
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/TaskType'
+        - name: status
+          in: query
+          description: Virgülle birden fazla durum verilebilir
+          style: form
+          explode: false
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/TaskStatus'
+        - name: priority
+          in: query
+          style: form
+          explode: false
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/TaskPriority'
+        - name: category
+          in: query
+          schema:
+            $ref: '#/components/schemas/TaskCategory'
+        - name: teamId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: projectId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: assigneeId
+          in: query
+          description: '`me` değeri oturumdaki kullanıcıyı ifade eder'
+          schema:
+            type: string
+        - name: overdue
+          in: query
+          schema:
+            type: boolean
+        - name: recurring
+          in: query
+          description: true ise sadece tekrarlayan şablonlar
+          schema:
+            type: boolean
+        - name: dueFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dueTo
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [dueDate, -dueDate, priority, -priority, createdAt, -createdAt, updatedAt, -updatedAt]
+            default: -updatedAt
+      responses:
+        '200':
+          description: Task listesi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Tasks]
+      operationId: createTask
+      summary: Task oluştur
+      description: Çalışan sadece kendine atanmış STANDARD task oluşturabilir. PROJECT task'ı için projectId zorunludur.
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreate'
+      responses:
+        '201':
+          description: Oluşturuldu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /tasks/{taskId}:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    get:
+      tags: [Tasks]
+      operationId: getTask
+      summary: Task detayı
+      responses:
+        '200':
+          description: Task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Tasks]
+      operationId: updateTask
+      summary: Task alanlarını güncelle (durum hariç — transitions kullanın)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdate'
+      responses:
+        '200':
+          description: Güncellendi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags: [Tasks]
+      operationId: deleteTask
+      summary: Task'ı sil (soft delete, yönetici+)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204':
+          description: Silindi
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tasks/{taskId}/transitions:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      tags: [Tasks]
+      operationId: transitionTask
+      summary: Task durumunu değiştir (geçiş kuralları ADR-0002)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskTransition'
+      responses:
+        '200':
+          description: Durum değişti
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          description: Geçersiz durum geçişi
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /tasks/{taskId}/comments:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    get:
+      tags: [Tasks]
+      operationId: listTaskComments
+      summary: Task yorumları
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Yorumlar (eskiden yeniye)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Tasks]
+      operationId: addTaskComment
+      summary: Yorum ekle
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentCreate'
+      responses:
+        '201':
+          description: Eklendi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tasks/{taskId}/history:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    get:
+      tags: [Tasks]
+      operationId: getTaskHistory
+      summary: Task değişiklik geçmişi (audit kayıtlarından)
+      responses:
+        '200':
+          description: Geçmiş
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditLogEntry'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------- Dashboard
+  /dashboard/summary:
+    get:
+      tags: [Dashboard]
+      operationId: getDashboardSummary
+      summary: Ekip bazında durum sayıları (standart / proje ayrımıyla)
+      description: |
+        Rol kapsamındaki ekipler için sayılar. Tekrarlayan şablonlar sayılmaz, örnekleri sayılır.
+        `from`/`to` verilirse task'ın oluşturulma tarihine göre filtrelenir.
+      parameters:
+        - name: teamId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Dashboard özeti
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------- Reports
+  /reports/tasks:
+    get:
+      tags: [Reports]
+      operationId: getTaskReport
+      summary: Toplu task raporu (JSON veya CSV)
+      parameters:
+        - name: groupBy
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [team, assignee, project, status, priority, category, type]
+        - name: teamId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: projectId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, csv]
+            default: json
+      responses:
+        '200':
+          description: Rapor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskReport'
+            text/csv:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ---------------------------------------------------------------- Notifications
+  /notifications:
+    get:
+      tags: [Notifications]
+      operationId: listNotifications
+      summary: Bildirimlerim
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: unread
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Bildirimler
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /notifications/unread-count:
+    get:
+      tags: [Notifications]
+      operationId: getUnreadNotificationCount
+      summary: Okunmamış bildirim sayısı
+      responses:
+        '200':
+          description: Sayı
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [count]
+                properties:
+                  count:
+                    type: integer
+                    minimum: 0
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /notifications/{notificationId}/read:
+    post:
+      tags: [Notifications]
+      operationId: markNotificationRead
+      summary: Bildirimi okundu işaretle
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+      responses:
+        '204':
+          description: İşaretlendi
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /notifications/read-all:
+    post:
+      tags: [Notifications]
+      operationId: markAllNotificationsRead
+      summary: Tümünü okundu işaretle
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204':
+          description: İşaretlendi
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ---------------------------------------------------------------- Announcements
+  /announcements:
+    get:
+      tags: [Announcements]
+      operationId: listAnnouncements
+      summary: Bana görünen duyurular (ekibim + kurum)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Duyurular
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnouncementPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Announcements]
+      operationId: createAnnouncement
+      summary: Duyuru yayınla (TEAM yönetici+, ORGANIZATION direktör)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnnouncementCreate'
+      responses:
+        '201':
+          description: Yayınlandı
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Announcement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /announcements/{announcementId}:
+    delete:
+      tags: [Announcements]
+      operationId: deleteAnnouncement
+      summary: Duyuruyu sil (yazarı veya direktör)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - name: announcementId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+      responses:
+        '204':
+          description: Silindi
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------- Events
+  /events:
+    get:
+      tags: [Events]
+      operationId: listEvents
+      summary: Etkinlikler
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Query'
+        - name: scope
+          in: query
+          schema:
+            $ref: '#/components/schemas/EventScope'
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/EventType'
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: participantId
+          in: query
+          description: '`me` değeri oturumdaki kullanıcı'
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Etkinlik listesi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Events]
+      operationId: createEvent
+      summary: Etkinlik oluştur (CORPORATE sadece direktör)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventCreate'
+      responses:
+        '201':
+          description: Oluşturuldu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /events/{eventId}:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Events]
+      operationId: getEvent
+      summary: Etkinlik detayı (katılımcılar dahil)
+      responses:
+        '200':
+          description: Etkinlik
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Events]
+      operationId: updateEvent
+      summary: Etkinliği güncelle (oluşturan veya direktör)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventUpdate'
+      responses:
+        '200':
+          description: Güncellendi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Events]
+      operationId: deleteEvent
+      summary: Etkinliği sil (oluşturan veya direktör)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204':
+          description: Silindi
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /events/{eventId}/participations:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Events]
+      operationId: listEventParticipations
+      summary: Etkinliğin katılımları (kapsamdaki kullanıcılar)
+      responses:
+        '200':
+          description: Katılımlar
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Participation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Events]
+      operationId: requestParticipation
+      summary: Katılım talebi (çalışan kendisi için; yönetici ekip üyesi için)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParticipationCreate'
+      responses:
+        '201':
+          description: Talep oluşturuldu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Participation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /participations/{participationId}:
+    patch:
+      tags: [Events]
+      operationId: decideParticipation
+      summary: Katılımı onayla / reddet / katıldı işaretle (yönetici+) veya iptal et (talep sahibi)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - name: participationId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParticipationDecision'
+      responses:
+        '200':
+          description: Güncellendi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Participation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Geçersiz durum geçişi
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  # ---------------------------------------------------------------- Competencies
+  /competencies:
+    get:
+      tags: [Competencies]
+      operationId: listCompetencies
+      summary: Yetkinlik kataloğu
+      responses:
+        '200':
+          description: Katalog
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Competency'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Competencies]
+      operationId: createCompetency
+      summary: Kataloğa yetkinlik ekle (yönetici+)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompetencyCreate'
+      responses:
+        '201':
+          description: Eklendi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Competency'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /competencies/matrix:
+    get:
+      tags: [Competencies]
+      operationId: getCompetencyMatrix
+      summary: Ekip yetkinlik matrisi (yönetici+)
+      parameters:
+        - name: teamId
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+      responses:
+        '200':
+          description: Matris
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetencyMatrix'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /users/{userId}/competencies:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [Competencies]
+      operationId: listUserCompetencies
+      summary: Kullanıcının yetkinlikleri
+      responses:
+        '200':
+          description: Yetkinlikler
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserCompetency'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /users/{userId}/competencies/{competencyId}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+      - name: competencyId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Id'
+    put:
+      tags: [Competencies]
+      operationId: upsertUserCompetency
+      summary: Seviye/kanıt gir (kullanıcının kendisi) — doğrulama alanı sadece yönetici+
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCompetencyUpsert'
+      responses:
+        '200':
+          description: Kaydedildi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserCompetency'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Competencies]
+      operationId: deleteUserCompetency
+      summary: Kaydı kaldır (kullanıcının kendisi veya yönetici+)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204':
+          description: Kaldırıldı
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------- Audit & Security
+  /audit-logs:
+    get:
+      tags: [Audit]
+      operationId: listAuditLogs
+      summary: Audit kayıtları (yönetici ekip kapsamı, direktör ve denetmen tümü)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: actorId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: action
+          in: query
+          schema:
+            type: string
+            maxLength: 60
+        - name: entityType
+          in: query
+          schema:
+            type: string
+            maxLength: 40
+        - name: entityId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, csv]
+            default: json
+      responses:
+        '200':
+          description: Audit kayıtları
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogPage'
+            text/csv:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /security/events:
+    get:
+      tags: [Security]
+      operationId: listSecurityEvents
+      summary: Güvenlik olayları (direktör, denetmen)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/SecurityEventType'
+        - name: severity
+          in: query
+          schema:
+            $ref: '#/components/schemas/SecuritySeverity'
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Olaylar
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityEventPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /security/summary:
+    get:
+      tags: [Security]
+      operationId: getSecuritySummary
+      summary: Güvenlik ekranı özeti — zaman serisi ve en çok tetikleyen kaynaklar (direktör, denetmen)
+      parameters:
+        - name: window
+          in: query
+          schema:
+            type: string
+            enum: [1h, 24h, 7d]
+            default: 24h
+      responses:
+        '200':
+          description: Özet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecuritySummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /system/metrics-summary:
+    get:
+      tags: [System]
+      operationId: getMetricsSummary
+      summary: Uygulama içi observability ekranı için RED metrikleri ve iş durumu (direktör, denetmen)
+      parameters:
+        - name: window
+          in: query
+          schema:
+            type: string
+            enum: [15m, 1h, 24h]
+            default: 1h
+      responses:
+        '200':
+          description: Metrik özeti
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: cth_session
+      description: Web oturumu. Durum değiştiren isteklerde X-CSRF-Token header'ı zorunlu.
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: cth_<prefix>_<secret>
+      description: Kişisel API token'ı (MCP ve entegrasyonlar). Etkin yetki = token scope'ları ∩ kullanıcı rolü.
+
+  parameters:
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: false
+      description: Cookie ile kimlik doğrulamada zorunlu; Bearer token ile gerekmez.
+      schema:
+        type: string
+        maxLength: 128
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    Query:
+      name: q
+      in: query
+      description: Serbest metin arama
+      schema:
+        type: string
+        maxLength: 100
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    TeamId:
+      name: teamId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+
+  responses:
+    BadRequest:
+      description: Doğrulama hatası
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unauthorized:
+      description: Kimlik doğrulanmadı
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: Yetki yok
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: Bulunamadı veya kapsam dışı
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: Çakışma (tekil alan, sürüm uyuşmazlığı, bağımlı kayıt)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    TooManyRequests:
+      description: Rate limit aşıldı
+      headers:
+        Retry-After:
+          description: Saniye
+          schema:
+            type: integer
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+
+  schemas:
+    # -------- primitives / enums
+    Id:
+      type: string
+      format: uuid
+    Role:
+      type: string
+      enum: [EMPLOYEE, MANAGER, DIRECTOR, AUDITOR]
+    TaskType:
+      type: string
+      enum: [STANDARD, PROJECT]
+    TaskStatus:
+      type: string
+      enum: [TODO, IN_PROGRESS, BLOCKED, DONE]
+    TaskPriority:
+      type: string
+      enum: [LOW, MEDIUM, HIGH, CRITICAL]
+    TaskCategory:
+      type: string
+      enum: [INCIDENT_RESPONSE, VULNERABILITY_MANAGEMENT, MONITORING, PENETRATION_TEST, COMPLIANCE, THREAT_INTEL, AWARENESS, OPERATIONS, OTHER]
+    Recurrence:
+      type: string
+      enum: [NONE, DAILY, WEEKLY, MONTHLY]
+    ProjectStatus:
+      type: string
+      enum: [ACTIVE, ON_HOLD, COMPLETED, ARCHIVED]
+    EventType:
+      type: string
+      enum: [CONFERENCE, TRAINING, CTF, WEBINAR, WORKSHOP, MEETUP, OTHER]
+    EventScope:
+      type: string
+      enum: [INDIVIDUAL, CORPORATE]
+    ParticipationRole:
+      type: string
+      enum: [ATTENDEE, SPEAKER, ORGANIZER, INSTRUCTOR]
+    ParticipationStatus:
+      type: string
+      enum: [REQUESTED, APPROVED, REJECTED, ATTENDED, CANCELLED]
+    CompetencyCategory:
+      type: string
+      enum: [OFFENSIVE, DEFENSIVE, GRC, CLOUD, APPSEC, FORENSICS, NETWORK, OTHER]
+    NotificationType:
+      type: string
+      enum: [TASK_ASSIGNED, TASK_BACKUP_ASSIGNED, TASK_STATUS_CHANGED, TASK_COMMENTED, TASK_DUE_SOON, TASK_OVERDUE, PARTICIPATION_DECIDED, ANNOUNCEMENT]
+    ApiScope:
+      type: string
+      enum: ['tasks:read', 'tasks:write', 'projects:read', 'reports:read', 'events:read', 'events:write', 'competencies:read']
+    SecurityEventType:
+      type: string
+      enum: [LOGIN_SUCCESS, LOGIN_FAILED, ACCOUNT_LOCKED, LOGOUT, SESSION_EXPIRED, CSRF_REJECTED, AUTHZ_DENIED, NOT_FOUND_PROBE, VALIDATION_REJECTED, PAYLOAD_TOO_LARGE, RATE_LIMITED, ROLE_CHANGED, USER_DEACTIVATED, API_TOKEN_CREATED, API_TOKEN_REVOKED, API_TOKEN_INVALID, BULK_EXPORT]
+    SecuritySeverity:
+      type: string
+      enum: [INFO, LOW, MEDIUM, HIGH]
+
+    # -------- common
+    Problem:
+      type: object
+      description: RFC 9457
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        requestId:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+    PageMeta:
+      type: object
+      required: [total, page, pageSize]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          minimum: 1
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, down]
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+        version:
+          type: string
+    UserRef:
+      type: object
+      required: [id, fullName]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        fullName:
+          type: string
+
+    # -------- auth
+    LoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+    Session:
+      type: object
+      required: [user, csrfToken, visibleTeamIds]
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        csrfToken:
+          type: string
+        visibleTeamIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/Id'
+        managedTeamIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/Id'
+        expiresAt:
+          type: string
+          format: date-time
+    ApiToken:
+      type: object
+      required: [id, name, prefix, scopes, createdAt, expiresAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          type: string
+        prefix:
+          type: string
+        scopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiScope'
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: [string, 'null']
+          format: date-time
+        revokedAt:
+          type: [string, 'null']
+          format: date-time
+    ApiTokenCreate:
+      type: object
+      required: [name, scopes]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        scopes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/ApiScope'
+        expiresInDays:
+          type: integer
+          minimum: 1
+          maximum: 90
+          default: 30
+    ApiTokenCreated:
+      allOf:
+        - $ref: '#/components/schemas/ApiToken'
+        - type: object
+          required: [token]
+          properties:
+            token:
+              type: string
+              description: Düz metin token — yalnızca bu yanıtta döner
+
+    # -------- users & teams
+    User:
+      type: object
+      required: [id, email, fullName, role, isActive]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+        title:
+          type: [string, 'null']
+        role:
+          $ref: '#/components/schemas/Role'
+        teamId:
+          oneOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        teamName:
+          type: [string, 'null']
+        isActive:
+          type: boolean
+        lastLoginAt:
+          type: [string, 'null']
+          format: date-time
+    UserPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/User'
+    UserCreate:
+      type: object
+      required: [email, fullName, role, password]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 120
+        title:
+          type: string
+          maxLength: 120
+        role:
+          $ref: '#/components/schemas/Role'
+        teamId:
+          $ref: '#/components/schemas/Id'
+        password:
+          type: string
+          minLength: 12
+          maxLength: 128
+    UserUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 120
+        title:
+          type: string
+          maxLength: 120
+        role:
+          $ref: '#/components/schemas/Role'
+        teamId:
+          $ref: '#/components/schemas/Id'
+        isActive:
+          type: boolean
+    Team:
+      type: object
+      required: [id, name, memberCount]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          type: string
+        description:
+          type: [string, 'null']
+        manager:
+          oneOf:
+            - $ref: '#/components/schemas/UserRef'
+            - type: 'null'
+        memberCount:
+          type: integer
+          minimum: 0
+    TeamCreate:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 1000
+        managerId:
+          $ref: '#/components/schemas/Id'
+    TeamUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 1000
+        managerId:
+          oneOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+
+    # -------- projects
+    Project:
+      type: object
+      required: [id, teamId, name, status, progress, createdAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        teamId:
+          $ref: '#/components/schemas/Id'
+        teamName:
+          type: string
+        name:
+          type: string
+        description:
+          type: [string, 'null']
+        owner:
+          oneOf:
+            - $ref: '#/components/schemas/UserRef'
+            - type: 'null'
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+        startDate:
+          type: [string, 'null']
+          format: date
+        dueDate:
+          type: [string, 'null']
+          format: date
+        progress:
+          $ref: '#/components/schemas/StatusCounts'
+        createdAt:
+          type: string
+          format: date-time
+    ProjectPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Project'
+    ProjectCreate:
+      type: object
+      required: [teamId, name]
+      additionalProperties: false
+      properties:
+        teamId:
+          $ref: '#/components/schemas/Id'
+        name:
+          type: string
+          minLength: 2
+          maxLength: 150
+        description:
+          type: string
+          maxLength: 10000
+        ownerId:
+          $ref: '#/components/schemas/Id'
+        startDate:
+          type: string
+          format: date
+        dueDate:
+          type: string
+          format: date
+    ProjectUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 150
+        description:
+          type: string
+          maxLength: 10000
+        ownerId:
+          oneOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+        startDate:
+          type: [string, 'null']
+          format: date
+        dueDate:
+          type: [string, 'null']
+          format: date
+
+    # -------- tasks
+    Task:
+      type: object
+      required: [id, type, teamId, title, status, priority, category, recurrence, isOverdue, version, createdAt, updatedAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        type:
+          $ref: '#/components/schemas/TaskType'
+        teamId:
+          $ref: '#/components/schemas/Id'
+        teamName:
+          type: string
+        project:
+          oneOf:
+            - type: object
+              required: [id, name]
+              properties:
+                id:
+                  $ref: '#/components/schemas/Id'
+                name:
+                  type: string
+            - type: 'null'
+        title:
+          type: string
+        description:
+          type: [string, 'null']
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        blockedReason:
+          type: [string, 'null']
+        priority:
+          $ref: '#/components/schemas/TaskPriority'
+        category:
+          $ref: '#/components/schemas/TaskCategory'
+        assignee:
+          oneOf:
+            - $ref: '#/components/schemas/UserRef'
+            - type: 'null'
+        backupAssignee:
+          oneOf:
+            - $ref: '#/components/schemas/UserRef'
+            - type: 'null'
+        dueDate:
+          type: [string, 'null']
+          format: date
+        isOverdue:
+          type: boolean
+        recurrence:
+          $ref: '#/components/schemas/Recurrence'
+        recurrenceParentId:
+          oneOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        startedAt:
+          type: [string, 'null']
+          format: date-time
+        completedAt:
+          type: [string, 'null']
+          format: date-time
+        createdBy:
+          $ref: '#/components/schemas/UserRef'
+        commentCount:
+          type: integer
+          minimum: 0
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    TaskPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Task'
+    TaskCreate:
+      type: object
+      required: [type, title]
+      additionalProperties: false
+      description: type=PROJECT ise projectId zorunlu ve teamId projeden türetilir; type=STANDARD ise teamId zorunlu (çalışan için kendi ekibi).
+      properties:
+        type:
+          $ref: '#/components/schemas/TaskType'
+        teamId:
+          $ref: '#/components/schemas/Id'
+        projectId:
+          $ref: '#/components/schemas/Id'
+        title:
+          type: string
+          minLength: 3
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 10000
+        priority:
+          $ref: '#/components/schemas/TaskPriority'
+        category:
+          $ref: '#/components/schemas/TaskCategory'
+        assigneeId:
+          $ref: '#/components/schemas/Id'
+        backupAssigneeId:
+          $ref: '#/components/schemas/Id'
+        dueDate:
+          type: string
+          format: date
+        recurrence:
+          $ref: '#/components/schemas/Recurrence'
+    TaskUpdate:
+      type: object
+      required: [version]
+      additionalProperties: false
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          description: Optimistic locking; uyuşmazsa 409
+        title:
+          type: string
+          minLength: 3
+          maxLength: 200
+        description:
+          type: [string, 'null']
+          maxLength: 10000
+        priority:
+          $ref: '#/components/schemas/TaskPriority'
+        category:
+          $ref: '#/components/schemas/TaskCategory'
+        assigneeId:
+          oneOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        backupAssigneeId:
+          oneOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        dueDate:
+          type: [string, 'null']
+          format: date
+        recurrence:
+          $ref: '#/components/schemas/Recurrence'
+    TaskTransition:
+      type: object
+      required: [to, version]
+      additionalProperties: false
+      properties:
+        to:
+          $ref: '#/components/schemas/TaskStatus'
+        version:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+          maxLength: 500
+          description: to=BLOCKED ise zorunlu
+    Comment:
+      type: object
+      required: [id, taskId, author, body, createdAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        taskId:
+          $ref: '#/components/schemas/Id'
+        author:
+          $ref: '#/components/schemas/UserRef'
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    CommentPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Comment'
+    CommentCreate:
+      type: object
+      required: [body]
+      additionalProperties: false
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 5000
+
+    # -------- dashboard & reports
+    StatusCounts:
+      type: object
+      required: [todo, inProgress, blocked, done, overdue, total]
+      properties:
+        todo:
+          type: integer
+          minimum: 0
+          description: Başlanmadı
+        inProgress:
+          type: integer
+          minimum: 0
+          description: Devam ediyor
+        blocked:
+          type: integer
+          minimum: 0
+          description: Bloklu
+        done:
+          type: integer
+          minimum: 0
+          description: Tamamlandı
+        overdue:
+          type: integer
+          minimum: 0
+          description: Son tarihi geçmiş ve tamamlanmamış (diğer sayılarla kesişir)
+        total:
+          type: integer
+          minimum: 0
+    TeamDashboard:
+      type: object
+      required: [teamId, teamName, all, standard, project]
+      properties:
+        teamId:
+          $ref: '#/components/schemas/Id'
+        teamName:
+          type: string
+        all:
+          $ref: '#/components/schemas/StatusCounts'
+        standard:
+          $ref: '#/components/schemas/StatusCounts'
+        project:
+          $ref: '#/components/schemas/StatusCounts'
+    DashboardSummary:
+      type: object
+      required: [generatedAt, totals, teams, mine, projects]
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        totals:
+          $ref: '#/components/schemas/TeamDashboardTotals'
+        teams:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamDashboard'
+        mine:
+          $ref: '#/components/schemas/StatusCounts'
+        projects:
+          type: array
+          description: Kapsamdaki aktif projelerin ilerlemesi (en fazla 10, son tarihe göre)
+          items:
+            type: object
+            required: [id, name, teamId, progress]
+            properties:
+              id:
+                $ref: '#/components/schemas/Id'
+              name:
+                type: string
+              teamId:
+                $ref: '#/components/schemas/Id'
+              dueDate:
+                type: [string, 'null']
+                format: date
+              progress:
+                $ref: '#/components/schemas/StatusCounts'
+    TeamDashboardTotals:
+      type: object
+      required: [all, standard, project]
+      properties:
+        all:
+          $ref: '#/components/schemas/StatusCounts'
+        standard:
+          $ref: '#/components/schemas/StatusCounts'
+        project:
+          $ref: '#/components/schemas/StatusCounts'
+    TaskReport:
+      type: object
+      required: [groupBy, from, to, rows, totals]
+      properties:
+        groupBy:
+          type: string
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        rows:
+          type: array
+          items:
+            type: object
+            required: [key, label, counts]
+            properties:
+              key:
+                type: string
+              label:
+                type: string
+              counts:
+                $ref: '#/components/schemas/StatusCounts'
+              avgCompletionHours:
+                type: [number, 'null']
+        totals:
+          $ref: '#/components/schemas/StatusCounts'
+
+    # -------- notifications & announcements
+    Notification:
+      type: object
+      required: [id, type, title, createdAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        type:
+          $ref: '#/components/schemas/NotificationType'
+        title:
+          type: string
+        body:
+          type: [string, 'null']
+        entityType:
+          type: [string, 'null']
+        entityId:
+          oneOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        readAt:
+          type: [string, 'null']
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    NotificationPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Notification'
+    Announcement:
+      type: object
+      required: [id, scope, title, body, author, pinned, createdAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        scope:
+          type: string
+          enum: [TEAM, ORGANIZATION]
+        teamId:
+          oneOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        title:
+          type: string
+        body:
+          type: string
+        author:
+          $ref: '#/components/schemas/UserRef'
+        pinned:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+    AnnouncementPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Announcement'
+    AnnouncementCreate:
+      type: object
+      required: [scope, title, body]
+      additionalProperties: false
+      properties:
+        scope:
+          type: string
+          enum: [TEAM, ORGANIZATION]
+        teamId:
+          $ref: '#/components/schemas/Id'
+        title:
+          type: string
+          minLength: 3
+          maxLength: 200
+        body:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        pinned:
+          type: boolean
+          default: false
+
+    # -------- events
+    Event:
+      type: object
+      required: [id, title, type, scope, startsAt, endsAt, createdBy]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        title:
+          type: string
+        type:
+          $ref: '#/components/schemas/EventType'
+        scope:
+          $ref: '#/components/schemas/EventScope'
+        description:
+          type: [string, 'null']
+        organizer:
+          type: [string, 'null']
+        location:
+          type: [string, 'null']
+        url:
+          type: [string, 'null']
+          format: uri
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        createdBy:
+          $ref: '#/components/schemas/UserRef'
+        participantCount:
+          type: integer
+          minimum: 0
+        myParticipation:
+          oneOf:
+            - $ref: '#/components/schemas/Participation'
+            - type: 'null'
+    EventPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Event'
+    EventCreate:
+      type: object
+      required: [title, type, scope, startsAt, endsAt]
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 3
+          maxLength: 200
+        type:
+          $ref: '#/components/schemas/EventType'
+        scope:
+          $ref: '#/components/schemas/EventScope'
+        description:
+          type: string
+          maxLength: 10000
+        organizer:
+          type: string
+          maxLength: 150
+        location:
+          type: string
+          maxLength: 200
+        url:
+          type: string
+          format: uri
+          pattern: '^https://'
+          maxLength: 500
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+    EventUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        title:
+          type: string
+          minLength: 3
+          maxLength: 200
+        type:
+          $ref: '#/components/schemas/EventType'
+        description:
+          type: [string, 'null']
+          maxLength: 10000
+        organizer:
+          type: [string, 'null']
+          maxLength: 150
+        location:
+          type: [string, 'null']
+          maxLength: 200
+        url:
+          type: [string, 'null']
+          format: uri
+          pattern: '^https://'
+          maxLength: 500
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+    Participation:
+      type: object
+      required: [id, eventId, user, role, status, createdAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        eventId:
+          $ref: '#/components/schemas/Id'
+        user:
+          $ref: '#/components/schemas/UserRef'
+        role:
+          $ref: '#/components/schemas/ParticipationRole'
+        status:
+          $ref: '#/components/schemas/ParticipationStatus'
+        decidedBy:
+          oneOf:
+            - $ref: '#/components/schemas/UserRef'
+            - type: 'null'
+        decidedAt:
+          type: [string, 'null']
+          format: date-time
+        note:
+          type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+    ParticipationCreate:
+      type: object
+      required: [role]
+      additionalProperties: false
+      properties:
+        userId:
+          $ref: '#/components/schemas/Id'
+          description: Boşsa oturumdaki kullanıcı
+        role:
+          $ref: '#/components/schemas/ParticipationRole'
+        note:
+          type: string
+          maxLength: 500
+    ParticipationDecision:
+      type: object
+      required: [status]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [APPROVED, REJECTED, ATTENDED, CANCELLED]
+        note:
+          type: string
+          maxLength: 500
+
+    # -------- competencies
+    Competency:
+      type: object
+      required: [id, name, category]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          type: string
+        category:
+          $ref: '#/components/schemas/CompetencyCategory'
+        description:
+          type: [string, 'null']
+    CompetencyCreate:
+      type: object
+      required: [name, category]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        category:
+          $ref: '#/components/schemas/CompetencyCategory'
+        description:
+          type: string
+          maxLength: 1000
+    UserCompetency:
+      type: object
+      required: [userId, competency, level, updatedAt]
+      properties:
+        userId:
+          $ref: '#/components/schemas/Id'
+        competency:
+          $ref: '#/components/schemas/Competency'
+        level:
+          type: integer
+          minimum: 1
+          maximum: 5
+        evidence:
+          type: [string, 'null']
+        verifiedBy:
+          oneOf:
+            - $ref: '#/components/schemas/UserRef'
+            - type: 'null'
+        verifiedAt:
+          type: [string, 'null']
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    UserCompetencyUpsert:
+      type: object
+      required: [level]
+      additionalProperties: false
+      properties:
+        level:
+          type: integer
+          minimum: 1
+          maximum: 5
+        evidence:
+          type: string
+          maxLength: 500
+        verified:
+          type: boolean
+          description: Sadece yönetici+ set edebilir; çalışan gönderirse 403
+    CompetencyMatrix:
+      type: object
+      required: [teamId, competencies, members]
+      properties:
+        teamId:
+          $ref: '#/components/schemas/Id'
+        competencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/Competency'
+        members:
+          type: array
+          items:
+            type: object
+            required: [user, levels]
+            properties:
+              user:
+                $ref: '#/components/schemas/UserRef'
+              levels:
+                type: object
+                description: competencyId → seviye (1–5)
+                additionalProperties:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+
+    # -------- audit & security
+    AuditLogEntry:
+      type: object
+      required: [id, occurredAt, actorType, action, result]
+      properties:
+        id:
+          type: integer
+        occurredAt:
+          type: string
+          format: date-time
+        actor:
+          oneOf:
+            - $ref: '#/components/schemas/UserRef'
+            - type: 'null'
+        actorType:
+          type: string
+          enum: [USER, API_TOKEN, SYSTEM]
+        action:
+          type: string
+        entityType:
+          type: [string, 'null']
+        entityId:
+          oneOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        changes:
+          type: [object, 'null']
+          additionalProperties: true
+        ip:
+          type: [string, 'null']
+        requestId:
+          type: [string, 'null']
+        result:
+          type: string
+          enum: [SUCCESS, DENIED, FAILED]
+    AuditLogPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AuditLogEntry'
+    SecurityEvent:
+      type: object
+      required: [id, occurredAt, type, severity]
+      properties:
+        id:
+          type: integer
+        occurredAt:
+          type: string
+          format: date-time
+        type:
+          $ref: '#/components/schemas/SecurityEventType'
+        severity:
+          $ref: '#/components/schemas/SecuritySeverity'
+        user:
+          oneOf:
+            - $ref: '#/components/schemas/UserRef'
+            - type: 'null'
+        ip:
+          type: [string, 'null']
+        requestId:
+          type: [string, 'null']
+        details:
+          type: [object, 'null']
+          additionalProperties: true
+    SecurityEventPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/SecurityEvent'
+    SecuritySummary:
+      type: object
+      required: [window, countsByType, timeline, topSources, openAlerts]
+      properties:
+        window:
+          type: string
+        countsByType:
+          type: object
+          additionalProperties:
+            type: integer
+        timeline:
+          type: array
+          items:
+            type: object
+            required: [bucket, count]
+            properties:
+              bucket:
+                type: string
+                format: date-time
+              count:
+                type: integer
+              byType:
+                type: object
+                additionalProperties:
+                  type: integer
+        topSources:
+          type: array
+          items:
+            type: object
+            required: [ip, count]
+            properties:
+              ip:
+                type: string
+              count:
+                type: integer
+              lastSeen:
+                type: string
+                format: date-time
+        openAlerts:
+          type: array
+          items:
+            type: object
+            required: [rule, severity, firstSeen, count]
+            properties:
+              rule:
+                type: string
+              severity:
+                $ref: '#/components/schemas/SecuritySeverity'
+              firstSeen:
+                type: string
+                format: date-time
+              count:
+                type: integer
+              sample:
+                type: [string, 'null']
+    MetricsSummary:
+      type: object
+      required: [window, endpoints, jobs]
+      properties:
+        window:
+          type: string
+        uptimeSeconds:
+          type: integer
+        endpoints:
+          type: array
+          items:
+            type: object
+            required: [route, method, requests, errorRate, p50Ms, p95Ms, p99Ms]
+            properties:
+              route:
+                type: string
+              method:
+                type: string
+              requests:
+                type: integer
+              errorRate:
+                type: number
+                minimum: 0
+                maximum: 1
+              p50Ms:
+                type: number
+              p95Ms:
+                type: number
+              p99Ms:
+                type: number
+        jobs:
+          type: array
+          items:
+            type: object
+            required: [name, lastRunAt, lastStatus]
+            properties:
+              name:
+                type: string
+              lastRunAt:
+                type: [string, 'null']
+                format: date-time
+              lastStatus:
+                type: string
+                enum: [SUCCESS, FAILED, NEVER_RAN]
+              lastDurationMs:
+                type: [integer, 'null']

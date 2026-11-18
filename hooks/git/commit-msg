@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# R-CORE-01 / R-GIT-02: commit mesajı "TASK-NNN: ..." ile başlamalı.
+msg_file="$1"
+first=$(head -n1 "$msg_file")
+if [[ "$first" =~ ^(Merge|Revert|fixup!|squash!) ]]; then exit 0; fi
+if ! [[ "$first" =~ ^TASK-[0-9]{3}:\ .{5,} ]]; then
+  echo "✘ commit-msg: ilk satır 'TASK-NNN: <özet>' biçiminde olmalı (R-GIT-02). Gelen: '$first'" >&2
+  exit 1
+fi
+id=$(echo "$first" | grep -oE '^TASK-[0-9]{3}')
+root=$(git rev-parse --show-toplevel)
+if [ ! -f "$root/tasks/$id.md" ]; then
+  echo "✘ commit-msg: tasks/$id.md yok. Önce TASK oluştur (/new-task)." >&2
+  exit 1
+fi
+# AI katkı istatistiği için trailer'ı say (zorunlu değil, ölçülür)
+exit 0
