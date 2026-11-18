@@ -5,6 +5,7 @@
   "scripts": {
     "gen:api": "pnpm -C packages/api-client gen",
     "dev:web": "pnpm -C apps/web dev",
-    "build:web": "pnpm -C apps/web build"
+    "build:web": "pnpm -C apps/web build",
+    "test:e2e": "pnpm -C tests/e2e test"
   }
 }
