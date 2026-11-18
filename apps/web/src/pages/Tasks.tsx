@@ -33,8 +33,10 @@ export function TasksPage({ projectId, embedded }: { projectId?: string; embedde
   const [q, setQ] = useState(params.get("q") ?? "");
   const [creating, setCreating] = useState(false);
 
+  // Her zaman GÜNCEL URL'den türet: gecikmeli arama (q) eski render'ın kapanışıyla çalışır; `params` ya da
+  // setParams'ın fonksiyonel biçimi kullanılırsa arada açılan task detayını (open) siler.
   const set = (key: string, value?: string | null) => {
-    const next = new URLSearchParams(params);
+    const next = new URLSearchParams(window.location.search);
     if (value) next.set(key, value);
     else next.delete(key);
     if (key !== "page" && key !== "open") next.delete("page");
